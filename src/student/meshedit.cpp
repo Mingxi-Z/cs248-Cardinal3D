@@ -75,9 +75,121 @@ std::optional<Halfedge_Mesh::VertexRef> Halfedge_Mesh::collapse_face(Halfedge_Me
     flipped edge.
 */
 std::optional<Halfedge_Mesh::EdgeRef> Halfedge_Mesh::flip_edge(Halfedge_Mesh::EdgeRef e) {
+    // Ignore requests to flip boundary edges
+    if(e->on_boundary()) {
+        return std::nullopt;
+    }
 
-    (void)e;
-    return std::nullopt;
+    // TODO:: Ignore requests that would invalidate the mesh.
+
+    int n_edge = 1;
+
+    // Collect halfedges, vertices, edges and faces.
+    std::vector<HalfedgeRef> h;
+    std::vector<VertexRef> v;
+    std::vector<EdgeRef> ed;
+    std::vector<FaceRef> f;
+
+    h.push_back(e->halfedge());
+    h.push_back(h[0]->twin());
+    ed.push_back(e);
+    f.push_back(h[0]->face());
+    f.push_back(h[1]->face());
+
+
+    HalfedgeRef iter = h[0]->next();
+
+    do {
+        h.push_back(iter);
+        h.push_back(iter->twin());
+        v.push_back(iter->vertex());
+        ed.push_back(iter->edge());
+        n_edge++;
+
+        iter = iter->next();
+    } while(iter != h[0]);
+
+    iter = h[1]->next();
+    
+    do {
+        h.push_back(iter);
+        h.push_back(iter->twin());
+        v.push_back(iter->vertex());
+        ed.push_back(iter->edge());
+        iter = iter->next();
+    } while(iter != h[1]);
+    
+    // Check whether there's already an edge
+    iter = v[1]->halfedge();
+    do {
+        if(iter->twin()->vertex() == v[n_edge]) {
+            return std::nullopt;
+        }
+        iter = iter->twin()->next();
+    } while(iter != v[1]->halfedge());
+
+    // Check whether there's duplicate vertex
+    std::set<VertexRef> temp_v(v.begin(), v.end());
+    if(temp_v.size() != v.size()) {
+        return std::nullopt;
+    }
+
+    // Check whether there's duplicate halfedges
+    std::set<HalfedgeRef> temp_h(h.begin(), h.end());
+    if(temp_h.size() != h.size()) {
+        return std::nullopt;
+    }
+
+    // Reassign halfedge
+    h[0]->vertex() = v[n_edge];
+    h[1]->vertex() = v[1];
+
+    size_t n_vertex = v.size();
+    size_t n_halfedge = h.size();
+    for(int i = 2; i < h.size(); i+=2) {
+        int vertex_index = (i / 2) % n_vertex;
+        h[i]->vertex() = v[vertex_index];
+        int edge_index = (i / 2) % n_vertex + 1;
+        h[i]->edge() = ed[edge_index];
+        int twin_index = i % (n_halfedge - 2) + 3;
+        h[i]->twin() = h[twin_index];
+        h[twin_index]->twin() = h[i];
+    }
+
+    // Reassign edge
+    for(int i = 2; i < ed.size(); i++) {
+        int inside_index = 2 * (i - 1);
+        ed[i]->halfedge() = h[inside_index];
+    }
+
+    ed[1]->halfedge() = h[h.size() - 2];
+
+    // Reassign Vertex
+    for(int i = 1; i < v.size(); i++) {
+        v[i]->halfedge() = h[i * 2];
+    }
+
+    v[0]->halfedge() = h[h.size() - 2];
+
+    // Debug
+    /*for(int i = 0; i < v.size(); i++) {
+        if(v[i]->halfedge()->vertex()->id() != v[i]->id()) {
+            break;
+        }
+    }
+
+    for(int i = 0; i < ed.size(); i++) {
+        if(ed[i]->halfedge()->edge()->id() != ed[i]->id()) {
+            break;
+        }
+    }*/
+    for(int i = 0; i < ed.size(); i++) {
+        if(h[i]->twin()->twin() != h[i]) {
+            break;
+        }
+    }
+
+    return e;
 }
 
 /*
@@ -124,7 +236,7 @@ std::optional<Halfedge_Mesh::VertexRef> Halfedge_Mesh::split_edge(Halfedge_Mesh:
     implement!)
 */
 std::optional<Halfedge_Mesh::FaceRef> Halfedge_Mesh::bevel_vertex(Halfedge_Mesh::VertexRef v) {
-
+  
     // Reminder: You should set the positions of new vertices (v->pos) to be exactly
     // the same as wherever they "started from."
 
