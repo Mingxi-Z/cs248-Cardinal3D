@@ -259,7 +259,6 @@ std::optional<Halfedge_Mesh::VertexRef> Halfedge_Mesh::split_edge(Halfedge_Mesh:
         f.push_back(new_face());
     } else {
         f.push_back(new_face());
-        f.push_back(new_face(true));
     }
     
     // Update Vertex
@@ -268,16 +267,16 @@ std::optional<Halfedge_Mesh::VertexRef> Halfedge_Mesh::split_edge(Halfedge_Mesh:
     v[2]->halfedge() = h[5];
 
     // Update halfedge relations
-    h[0]->vertex() = v[4];
-    h[2]->next() = h[10];
-    h[10]->set_neighbors(h[0], h[11], v[1], ed[5], f[0]);
+    if(!boundary) {
+        h[0]->vertex() = v.back();
+        h[2]->next() = h[10];
+        h[10]->set_neighbors(h[0], h[11], v[1], ed[5], f[0]);
 
-    h[11]->set_neighbors(h[4], h[10], v[4], ed[5], f[2]);
-    h[4]->next() = h[12];
-    h[4]->face() = f[2];
-    h[12]->set_neighbors(h[11], h[13], v[2], ed[6], f[2]);
+        h[11]->set_neighbors(h[4], h[10], v[4], ed[5], f[2]);
+        h[4]->next() = h[12];
+        h[4]->face() = f[2];
+        h[12]->set_neighbors(h[11], h[13], v[2], ed[6], f[2]);
 
-    if(!e->on_boundary()) {
         h[13]->set_neighbors(h[6], h[12], v[4], ed[6], f[3]);
         h[6]->next() = h[14];
         h[6]->face() = f[3];
@@ -285,14 +284,29 @@ std::optional<Halfedge_Mesh::VertexRef> Halfedge_Mesh::split_edge(Halfedge_Mesh:
 
         h[15]->set_neighbors(h[8], h[14], v[4], ed[7], f[1]);
         h[1]->next() = h[15];
-    } 
+    }
+
     else {
-        h[13]->set_neighbors(h[5], h[12], v[2], ed[6], f[3]);
-        h[1]->next() = h[13];
+        h[0]->vertex() = v.back();
+        h[2]->next() = h[6];
+        h[6]->set_neighbors(h[0], h[7], v[1], ed[3], f[0]);
+
+        h[7]->set_neighbors(h[4], h[6], v[3], ed[3], f[2]);
+        h[4]->next() = h[8];
+        h[4]->face() = f[2];
+        h[8]->set_neighbors(h[7], h[9], v[2], ed[4], f[2]);
+
+        h[9]->set_neighbors(h[1]->next(), h[8], v[3], ed[4], h[1]->face());
+        
+        h[1]->next() = h[9];
     }
 
     // Update Edges
-    for(int i = 5; i < ed.size(); i++) {
+    int start_idx = 5;
+    if(boundary) {
+        start_idx = 3;
+    }
+    for(int i = start_idx; i < ed.size(); i++) {
         int idx = i * 2;
         ed[i]->halfedge() = h[idx];
     }
@@ -302,9 +316,11 @@ std::optional<Halfedge_Mesh::VertexRef> Halfedge_Mesh::split_edge(Halfedge_Mesh:
     f[1]->halfedge() = h[1];
 
     f[2]->halfedge() = h[4];
-    f[3]->halfedge() = h[13];
-
-    return v[4];
+    if(!boundary) {
+        f[3]->halfedge() = h[6];
+    }
+    
+    return v.back();
 }
 
 /* Note on the beveling process:
