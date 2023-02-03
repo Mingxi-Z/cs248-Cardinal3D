@@ -6,6 +6,57 @@
 #include "../geometry/halfedge.h"
 #include "debug.h"
 
+/* Helper Functions
+*/
+
+void collect_element(Halfedge_Mesh::EdgeRef& e, 
+    std::vector<Halfedge_Mesh::HalfedgeRef>& h,
+    std::vector<Halfedge_Mesh::VertexRef>& v,
+    std::vector<Halfedge_Mesh::EdgeRef>& ed,
+    std::vector<Halfedge_Mesh::FaceRef>& f,
+    int& n_edge) {
+    
+    n_edge = 1;
+
+    Halfedge_Mesh::HalfedgeRef start = e->halfedge();
+    if(start->is_boundary()) {
+        start = start->twin();
+    }
+
+    h.push_back(start);
+    h.push_back(h[0]->twin());
+    ed.push_back(e);
+    f.push_back(h[0]->face());
+    f.push_back(h[1]->face());
+
+    Halfedge_Mesh::HalfedgeRef iter = h[0]->next();
+
+    do {
+        h.push_back(iter);
+        h.push_back(iter->twin());
+        v.push_back(iter->vertex());
+        ed.push_back(iter->edge());
+        n_edge++;
+
+        iter = iter->next();
+    } while(iter != h[0]);
+
+    if(e->on_boundary()) {
+        v.push_back(h[0]->vertex());
+        return;
+    }
+
+    iter = h[1]->next();
+
+    do {
+        h.push_back(iter);
+        h.push_back(iter->twin());
+        v.push_back(iter->vertex());
+        ed.push_back(iter->edge());
+        iter = iter->next();
+    } while(iter != h[1]);
+}
+
 /* Note on local operation return types:
 
     The local operations all return a std::optional<T> type. This is used so that your
@@ -82,45 +133,17 @@ std::optional<Halfedge_Mesh::EdgeRef> Halfedge_Mesh::flip_edge(Halfedge_Mesh::Ed
 
     // TODO:: Ignore requests that would invalidate the mesh.
 
-    int n_edge = 1;
-
     // Collect halfedges, vertices, edges and faces.
     std::vector<HalfedgeRef> h;
     std::vector<VertexRef> v;
     std::vector<EdgeRef> ed;
     std::vector<FaceRef> f;
+    int n_edge;
 
-    h.push_back(e->halfedge());
-    h.push_back(h[0]->twin());
-    ed.push_back(e);
-    f.push_back(h[0]->face());
-    f.push_back(h[1]->face());
-
-
-    HalfedgeRef iter = h[0]->next();
-
-    do {
-        h.push_back(iter);
-        h.push_back(iter->twin());
-        v.push_back(iter->vertex());
-        ed.push_back(iter->edge());
-        n_edge++;
-
-        iter = iter->next();
-    } while(iter != h[0]);
-
-    iter = h[1]->next();
-    
-    do {
-        h.push_back(iter);
-        h.push_back(iter->twin());
-        v.push_back(iter->vertex());
-        ed.push_back(iter->edge());
-        iter = iter->next();
-    } while(iter != h[1]);
+    collect_element(e, h, v, ed, f, n_edge);
     
     // Check whether there's already an edge
-    iter = v[1]->halfedge();
+    HalfedgeRef iter = v[1]->halfedge();
     do {
         if(iter->twin()->vertex() == v[n_edge]) {
             return std::nullopt;
@@ -183,11 +206,11 @@ std::optional<Halfedge_Mesh::EdgeRef> Halfedge_Mesh::flip_edge(Halfedge_Mesh::Ed
             break;
         }
     }*/
-    for(int i = 0; i < ed.size(); i++) {
+    /*for(int i = 0; i < ed.size(); i++) {
         if(h[i]->twin()->twin() != h[i]) {
             break;
         }
-    }
+    }*/
 
     return e;
 }
@@ -199,8 +222,89 @@ std::optional<Halfedge_Mesh::EdgeRef> Halfedge_Mesh::flip_edge(Halfedge_Mesh::Ed
 */
 std::optional<Halfedge_Mesh::VertexRef> Halfedge_Mesh::split_edge(Halfedge_Mesh::EdgeRef e) {
 
-    (void)e;
-    return std::nullopt;
+    // Collect halfedges, vertices, edges and faces.
+    std::vector<HalfedgeRef> h;
+    std::vector<VertexRef> v;
+    std::vector<EdgeRef> ed;
+    std::vector<FaceRef> f;
+    int n_edge;
+    bool boundary = e->on_boundary();
+
+    collect_element(e, h, v, ed, f, n_edge);
+
+    // This method only for triangle meshes
+    if(n_edge != 3) {
+        return std::nullopt;
+    }
+
+    v.push_back(new_vertex());
+    v.back()->pos = (v[0]->pos + v[2]->pos) / 2.0;
+
+    int num_new_edge = 3;
+
+    if(boundary) {
+        num_new_edge = 2;
+    }
+
+    for(int i = 0; i < num_new_edge; i++) {
+        ed.push_back(new_edge());
+    }
+
+    for(int i = 0; i < num_new_edge * 2; i++) {
+        h.push_back(new_halfedge());
+    }
+
+    if(!boundary) {
+        f.push_back(new_face());
+        f.push_back(new_face());
+    } else {
+        f.push_back(new_face());
+        f.push_back(new_face(true));
+    }
+    
+    // Update Vertex
+    v.back()->halfedge() = h[0];
+    
+    v[2]->halfedge() = h[5];
+
+    // Update halfedge relations
+    h[0]->vertex() = v[4];
+    h[2]->next() = h[10];
+    h[10]->set_neighbors(h[0], h[11], v[1], ed[5], f[0]);
+
+    h[11]->set_neighbors(h[4], h[10], v[4], ed[5], f[2]);
+    h[4]->next() = h[12];
+    h[4]->face() = f[2];
+    h[12]->set_neighbors(h[11], h[13], v[2], ed[6], f[2]);
+
+    if(!e->on_boundary()) {
+        h[13]->set_neighbors(h[6], h[12], v[4], ed[6], f[3]);
+        h[6]->next() = h[14];
+        h[6]->face() = f[3];
+        h[14]->set_neighbors(h[13], h[15], v[3], ed[7], f[3]);
+
+        h[15]->set_neighbors(h[8], h[14], v[4], ed[7], f[1]);
+        h[1]->next() = h[15];
+    } 
+    else {
+        h[13]->set_neighbors(h[5], h[12], v[2], ed[6], f[3]);
+        h[1]->next() = h[13];
+    }
+
+    // Update Edges
+    for(int i = 5; i < ed.size(); i++) {
+        int idx = i * 2;
+        ed[i]->halfedge() = h[idx];
+    }
+
+    // Update Face
+    f[0]->halfedge() = h[0];
+    f[1]->halfedge() = h[1];
+
+    f[2]->halfedge() = h[4];
+    f[3]->halfedge() = h[13];
+
+    return v[4];
 }
 
 /* Note on the beveling process:
