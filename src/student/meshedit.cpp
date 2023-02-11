@@ -6,8 +6,7 @@
 #include "../geometry/halfedge.h"
 #include "debug.h"
 
-/* Helper Functions
-*/
+/* Helper Functions */
 
 void collect_element(Halfedge_Mesh::EdgeRef& e, 
     std::vector<Halfedge_Mesh::HalfedgeRef>& h,
@@ -57,7 +56,49 @@ void collect_element(Halfedge_Mesh::EdgeRef& e,
     } while(iter != h[1]);
 }
 
-/* Note on local operation return types:
+void collect_one_face(Halfedge_Mesh::HalfedgeRef& start, 
+    std::vector<Halfedge_Mesh::HalfedgeRef>& h,
+    std::vector<Halfedge_Mesh::VertexRef>& v,
+    std::vector<Halfedge_Mesh::EdgeRef>& ed,
+    Halfedge_Mesh::FaceRef& f,
+    int& n_edge) {
+    n_edge = 1;
+
+    h.push_back(start);
+    h.push_back(h[0]->twin());
+    ed.push_back(start->edge());
+    f = h[0]->face();
+    
+    Halfedge_Mesh::HalfedgeRef iter = h[0]->next();
+
+    do {
+        h.push_back(iter);
+        h.push_back(iter->twin());
+        v.push_back(iter->vertex());
+        ed.push_back(iter->edge());
+        n_edge++;
+
+        iter = iter->next();
+    } while(iter != h[0]);
+
+    v.push_back(h[0]->vertex());
+}
+
+void collect_around_vertex(Halfedge_Mesh::HalfedgeRef& removed,
+    std::vector<Halfedge_Mesh::HalfedgeRef>& h,
+    std::vector<Halfedge_Mesh::EdgeRef>& ed) {
+
+    Halfedge_Mesh::HalfedgeRef iter = removed->next();
+
+     do {
+        h.push_back(iter);
+        h.push_back(iter->twin());
+        ed.push_back(iter->edge());
+
+        iter = iter->twin()->next();
+    } while(iter != removed->twin());
+}
+    /* Note on local operation return types:
 
     The local operations all return a std::optional<T> type. This is used so that your
     implementation can signify that it does not want to perform the operation for
@@ -106,9 +147,85 @@ std::optional<Halfedge_Mesh::FaceRef> Halfedge_Mesh::erase_edge(Halfedge_Mesh::E
     the new vertex created by the collapse.
 */
 std::optional<Halfedge_Mesh::VertexRef> Halfedge_Mesh::collapse_edge(Halfedge_Mesh::EdgeRef e) {
+    
+    // Collect edges around vertex;
+    HalfedgeRef h1 = e->halfedge();
+    FaceRef f1 = h1->face();
+    int n_edge_1 = f1->degree();
 
-    (void)e;
-    return std::nullopt;
+    HalfedgeRef h2 = h1->twin();
+    FaceRef f2 = h2->face();
+    int n_edge_2 = f2->degree();
+
+    // If the mesh is a single triangle, return
+    if(n_edge_1 == 3 && h1->is_boundary()) return std::nullopt;
+    if(n_edge_2 == 3 && h2->is_boundary()) return std::nullopt;
+
+    // start from two sides of the given e.
+    std::vector<Halfedge_Mesh::HalfedgeRef> hs_1, hs_2;
+    std::vector<Halfedge_Mesh::EdgeRef> edges_1, edges_2;
+
+    collect_around_vertex(h1, hs_1, edges_1);
+    collect_around_vertex(h2, hs_2, edges_2);
+
+    VertexRef v_new = h2->vertex();
+    v_new->pos = e->center();
+
+    for(int i = 0; i < hs_1.size(); i += 2) {
+        hs_1[i]->vertex() = v_new;
+    }
+
+    for(int i = 0; i < hs_2.size(); i += 2) {
+        hs_2[i]->vertex() = v_new;
+    }
+
+    /* If the face is triangle 
+    1 delete face
+    2 delete 1 edge
+    3 change edge relations */ 
+    auto remove_face = [this, v_new](HalfedgeRef h1, 
+                          std::vector<Halfedge_Mesh::HalfedgeRef> hs_1,
+                          std::vector<Halfedge_Mesh::HalfedgeRef> hs_2) {
+        HalfedgeRef hs_2_last = hs_2.back();
+        hs_2_last->next() = hs_1[1]->next();
+        hs_2_last->face() = hs_1[1]->face();
+        erase(h1->face());
+
+        HalfedgeRef iter = hs_1[1];
+        while(iter->next() != hs_1[1]) iter = iter->next();
+
+        iter->next() = hs_2_last;
+        hs_2_last->vertex()->halfedge() = hs_2_last;
+        hs_1[1]->face()->halfedge() = hs_2_last;
+
+        v_new->halfedge() = hs_2_last->twin();
+        erase(hs_1[0]->edge());
+        erase(hs_1[0]);
+        erase(hs_1[1]);
+    };
+
+    if(n_edge_1 == 3) {
+        remove_face(h1, hs_1, hs_2);
+    } else {
+        hs_2.back()->next() = hs_1.front();
+        hs_2.back()->face()->halfedge() = hs_2.back();
+        v_new->halfedge() = hs_1[0];
+    }
+    if(n_edge_2 == 3) {
+        remove_face(h2, hs_2, hs_1);
+    } else {
+        hs_1.back()->next() = hs_2.front();
+        hs_1.back()->face()->halfedge() = hs_1.back();
+        v_new->halfedge() = hs_2[0];
+    }
+
+
+    erase(h1->vertex());
+    erase(h1);
+    erase(h2);
+    erase(e);
+
+    return v_new;
 }
 
 /*
