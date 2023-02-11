@@ -511,9 +511,83 @@ std::optional<Halfedge_Mesh::FaceRef> Halfedge_Mesh::bevel_face(Halfedge_Mesh::F
 
     // Reminder: You should set the positions of new vertices (v->pos) to be exactly
     // the same as wherever they "started from."
+    int n_edge = f->degree();
+    
+    std::vector<HalfedgeRef> old_hs;
+    std::vector<VertexRef> old_vs;
 
-    (void)f;
-    return std::nullopt;
+    HalfedgeRef iter = f->halfedge();
+    
+    do {
+        old_hs.push_back(iter);
+        old_vs.push_back(iter->twin()->vertex());
+        iter = iter->next();
+    } while(iter != f->halfedge());
+    
+    std::vector<EdgeRef> new_edges_side;
+    std::vector<EdgeRef> new_edges_top;
+    std::vector<HalfedgeRef> new_hs_side;
+    std::vector<HalfedgeRef> new_hs_top;
+    std::vector<VertexRef> new_vs;
+    std::vector<FaceRef> new_fs;
+
+    for(int i = 0; i < n_edge; i++) {
+        new_fs.push_back(new_face());
+        
+        new_vs.push_back(new_vertex());
+        
+        new_edges_side.push_back(new_edge());
+        new_edges_top.push_back(new_edge());
+
+        for(int j = 0; j < 2; j++) {
+            new_hs_side.push_back(new_halfedge());
+            new_hs_top.push_back(new_halfedge());
+        }
+    }
+
+    for(int i = 0; i < n_edge; i++) {
+        old_hs[i]->face() = new_fs[i];
+        int next_idx = 2 * i;
+        old_hs[i]->next() = new_hs_side[next_idx];
+    }
+    
+    int n_halfedge = 2 * n_edge;
+    for(int i = 0; i < n_edge; i++) {
+        int cur = i * 2;
+        int twin = cur + 1;
+        
+        int twin_next = (i + 1) % n_edge;
+        int top_twin_next = (twin + 2) % n_halfedge;
+
+        int prev = (cur + n_halfedge - 1) % n_halfedge;
+        int top_vertex_prev = (i + n_edge - 1) % n_edge;
+
+        // Set halfedges
+        new_hs_side[cur]->set_neighbors(new_hs_top[cur], new_hs_side[twin], old_vs[i], new_edges_side[i],
+                                        new_fs[i]);
+        new_hs_side[twin]->set_neighbors(old_hs[twin_next], new_hs_side[cur], new_vs[i],
+                                         new_edges_side[i], new_fs[twin_next]);
+        
+        new_hs_top[cur]->set_neighbors(new_hs_side[prev], new_hs_top[twin], new_vs[i],
+                                       new_edges_top[i], new_fs[i]);
+        new_hs_top[twin]->set_neighbors(new_hs_top[top_twin_next], new_hs_top[cur],
+                                        new_vs[top_vertex_prev], new_edges_top[i], f);
+        
+        // Set edges
+        new_edges_side[i]->halfedge() = new_hs_side[cur];
+        new_edges_top[i]->halfedge() = new_hs_top[cur];
+
+        // Set vertex
+        new_vs[i]->halfedge() = new_hs_top[cur];
+        new_vs[i]->pos = old_vs[i]->pos;
+
+        // Set faces
+        new_fs[i]->halfedge() = new_hs_side[cur];
+    }
+
+    f->halfedge() = new_hs_top[1];
+
+    return f;
 }
 
 /*
@@ -603,6 +677,10 @@ void Halfedge_Mesh::bevel_face_positions(const std::vector<Vec3>& start_position
                                          Halfedge_Mesh::FaceRef face, float tangent_offset,
                                          float normal_offset) {
 
+    if(normal_offset == 0 && tangent_offset == 0) {
+        return;
+    }
+
     if(flip_orientation) normal_offset = -normal_offset;
     std::vector<HalfedgeRef> new_halfedges;
     auto h = face->halfedge();
@@ -611,11 +689,26 @@ void Halfedge_Mesh::bevel_face_positions(const std::vector<Vec3>& start_position
         h = h->next();
     } while(h != face->halfedge());
 
-    (void)new_halfedges;
+    int N = (int) new_halfedges.size();
+    for(int i = 0; i < N; i++) {
+        Vec3 pi = start_positions[i]; // get the original vertex
+
+        Vec3 normal_vec = (normal_offset * face->normal());
+        pi += normal_vec;
+
+        Vec3 new_center = face->center() + normal_vec;
+        Vec3 tangent_vec = new_center - pi;
+        tangent_vec.normalize();
+
+        pi += tangent_offset * tangent_vec;
+        new_halfedges[i]->vertex()->pos = pi;
+    }
+
+    /*(void)new_halfedges;
     (void)start_positions;
     (void)face;
     (void)tangent_offset;
-    (void)normal_offset;
+    (void)normal_offset;*/
 }
 
 /*
