@@ -585,7 +585,7 @@ std::optional<Halfedge_Mesh::FaceRef> Halfedge_Mesh::bevel_face(Halfedge_Mesh::F
         new_fs[i]->halfedge() = new_hs_side[cur];
     }
 
-    f->halfedge() = new_hs_top[1];
+    f->halfedge() = new_hs_top[3];
 
     return f;
 }
@@ -676,11 +676,6 @@ void Halfedge_Mesh::bevel_edge_positions(const std::vector<Vec3>& start_position
 void Halfedge_Mesh::bevel_face_positions(const std::vector<Vec3>& start_positions,
                                          Halfedge_Mesh::FaceRef face, float tangent_offset,
                                          float normal_offset) {
-
-    if(normal_offset == 0 && tangent_offset == 0) {
-        return;
-    }
-
     if(flip_orientation) normal_offset = -normal_offset;
     std::vector<HalfedgeRef> new_halfedges;
     auto h = face->halfedge();
@@ -688,19 +683,20 @@ void Halfedge_Mesh::bevel_face_positions(const std::vector<Vec3>& start_position
         new_halfedges.push_back(h);
         h = h->next();
     } while(h != face->halfedge());
-
+    
     int N = (int) new_halfedges.size();
+    Vec3 normal = normal_offset * face->normal();
+    Vec3 new_center = normal + face->center();
     for(int i = 0; i < N; i++) {
         Vec3 pi = start_positions[i]; // get the original vertex
 
-        Vec3 normal_vec = (normal_offset * face->normal());
-        pi += normal_vec;
+        printf("normal x: %f, normal y: %f, normal z: %f\n", normal.x, normal.y,
+               normal.z);
+       
+        tangent_offset = std::clamp(tangent_offset, -0.9f, 2.0f);
+        Vec3 tangent = (1.f + tangent_offset) * pi + (-tangent_offset) * face->center();
 
-        Vec3 new_center = face->center() + normal_vec;
-        Vec3 tangent_vec = new_center - pi;
-        tangent_vec.normalize();
-
-        pi += tangent_offset * tangent_vec;
+        pi = tangent - normal;
         new_halfedges[i]->vertex()->pos = pi;
     }
 
@@ -715,8 +711,68 @@ void Halfedge_Mesh::bevel_face_positions(const std::vector<Vec3>& start_position
     Splits all non-triangular faces into triangles.
 */
 void Halfedge_Mesh::triangulate() {
+    size_t cur_faces = n_faces();
+
+    FaceRef iter = faces_begin();
+    int cur_idx = 0;
+
+    auto split_single = [this](FaceRef f, auto&& split_single) {
+        if(f->degree() == 3) {
+            return;
+        }
+
+        HalfedgeRef h = f->halfedge();
+
+        std::vector<HalfedgeRef> hs;
+        HalfedgeRef iter = h;
+
+        std::vector<VertexRef> vs;
+
+        vs.push_back(iter->vertex());
+        for(int i = 0; i < 3; i++) {
+            hs.push_back(iter);
+            iter = iter->next();
+        }
+        vs.push_back(iter->vertex());
+
+        while(iter->next() != h) {
+            iter = iter->next();
+        }
+
+        hs.push_back(iter);
+        
+        FaceRef f_new = new_face();
+        EdgeRef e_new = new_edge();
+        HalfedgeRef h_new = new_halfedge();
+        HalfedgeRef h_new_twin = new_halfedge();
+
+        // Assign face
+        f->halfedge() = hs.back();
+        f_new->halfedge() = hs.front();
+
+        // Assign edge
+        e_new->halfedge() = h_new;
+        
+        // Assign halfedge old
+        hs[0]->face() = f_new;
+
+        hs[1]->face() = f_new;
+        hs[1]->next() = h_new;
+        
+        hs.back()->next() = h_new_twin;
+        
+        // Assign halfedge new
+        h_new->set_neighbors(hs[0], h_new_twin, hs[2]->vertex(), e_new, f_new);
+        h_new_twin->set_neighbors(hs[2], h_new, hs[0]->vertex(), e_new, f);
+        split_single(f,split_single);
+    };
 
     // For each face...
+    do {
+        split_single(iter, split_single);
+        iter++;
+        cur_idx++;
+    } while(cur_idx < cur_faces);
 }
 
 /* Note on the quad subdivision process:
