@@ -150,8 +150,44 @@ std::optional<Halfedge_Mesh::FaceRef> Halfedge_Mesh::erase_vertex(Halfedge_Mesh:
  */
 std::optional<Halfedge_Mesh::FaceRef> Halfedge_Mesh::erase_edge(Halfedge_Mesh::EdgeRef e) {
 
-    (void)e;
-    return std::nullopt;
+    if(e->on_boundary()) return std::nullopt;
+
+    HalfedgeRef h1 = e->halfedge();
+    HalfedgeRef h2 = h1->twin();
+
+    std::vector<HalfedgeRef> hs1, hs2;
+    std::vector<VertexRef> vs1, vs2;
+    std::vector<EdgeRef> es1, es2;
+    FaceRef f1, f2;
+    int n_edge_1, n_edge_2 = 0;
+
+    collect_one_face(h1, hs1, vs1, es1, f1, n_edge_1);
+    collect_one_face(h2, hs2, vs2, es2, f2, n_edge_2);
+
+    if(f2 == hs1[3]->face() || f1 == hs2[3]->face()) {
+        return std::nullopt;
+    }
+
+    hs1[hs1.size() - 2]->next() = hs2[2];
+    hs2[hs2.size() - 2]->next() = hs1[2];
+
+    vs1[0]->halfedge() = hs1[2];
+    vs2[0]->halfedge() = hs2[2];
+
+    f1->halfedge() = hs1[2]; 
+
+    for(int i = 0; i < hs2.size(); i += 2) {
+        hs2[i]->face() = f1;
+    }
+
+    erase(hs1[0]);
+    erase(hs2[0]);
+    
+    erase(f2);
+    erase(e);
+
+
+    return f1;
 }
 
 /*
@@ -743,9 +779,6 @@ void Halfedge_Mesh::bevel_face_positions(const std::vector<Vec3>& start_position
     Vec3 new_center = normal + face->center();
     for(int i = 0; i < N; i++) {
         Vec3 pi = start_positions[i]; // get the original vertex
-
-        printf("normal x: %f, normal y: %f, normal z: %f\n", normal.x, normal.y,
-               normal.z);
        
         tangent_offset = std::clamp(tangent_offset, -0.9f, 2.0f);
         Vec3 tangent = (1.f + tangent_offset) * pi + (-tangent_offset) * face->center();
