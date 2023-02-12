@@ -168,6 +168,37 @@ std::optional<Halfedge_Mesh::VertexRef> Halfedge_Mesh::collapse_edge(Halfedge_Me
     collect_around_vertex(h1, hs_1, edges_1);
     collect_around_vertex(h2, hs_2, edges_2);
 
+    // do nothing if neighbor vertices > 2
+    int cnt = 0;
+    
+    if(hs_1[1]->vertex() == hs_2[hs_2.size() - 1]->vertex()) {
+        cnt++;
+    } 
+
+    if(hs_1[hs_1.size() - 1]->vertex() == hs_2[1]->vertex()) {
+        cnt++;
+    }
+
+    if(hs_1[3]->vertex() == hs_2[hs_2.size() - 3]->vertex()) {
+        cnt++;
+    } 
+
+    if(hs_1[hs_1.size() - 3]->vertex() == hs_2[3]->vertex()) {
+        cnt++;
+    }
+
+    /*for(size_t i = 1; i < hs_1.size(); i += 2) {
+        if(hs_2.size() < i) break;
+
+        size_t j = hs_2.size() - i;
+
+        if(hs_1[i]->vertex() == hs_2[j]->vertex()) {
+            cnt++;
+        }
+    }*/
+
+    if(cnt > 2) return std::nullopt;
+
     VertexRef v_new = h2->vertex();
     v_new->pos = e->center();
 
@@ -835,13 +866,27 @@ void Halfedge_Mesh::linear_subdivide_positions() {
 
     // For each vertex, assign Vertex::new_pos to
     // its original position, Vertex::pos.
-
+    VertexRef v_iter = vertices_begin();
+    do {
+        v_iter->new_pos = v_iter->pos;
+        v_iter++;
+    } while(v_iter != vertices.end());
     // For each edge, assign the midpoint of the two original
     // positions to Edge::new_pos.
+    EdgeRef e_iter = edges_begin();
+    do {
+        e_iter->new_pos = e_iter->center();
+        e_iter++;
+    } while(e_iter != edges.end());
 
     // For each face, assign the centroid (i.e., arithmetic mean)
     // of the original vertex positions to Face::new_pos. Note
     // that in general, NOT all faces will be triangles!
+    FaceRef f_iter = faces_begin();
+    do {
+        f_iter->new_pos = f_iter->center();
+        f_iter++;
+    } while(f_iter != faces.end());
 }
 
 /*
@@ -863,10 +908,50 @@ void Halfedge_Mesh::catmullclark_subdivide_positions() {
     // rules. (These rules are outlined in the Developer Manual.)
 
     // Faces
+    FaceRef f_iter = faces_begin();
+    do {
+        f_iter->new_pos = f_iter->center();
+        f_iter++;
+    } while(f_iter != faces.end());
 
     // Edges
+    EdgeRef e_iter = edges_begin();
+    do {
+        FaceRef f1 = e_iter->halfedge()->face();
+        FaceRef f2 = e_iter->halfedge()->twin()->face();
+        Vec3 new_pos = (f1->new_pos + f2->new_pos + e_iter->center()) / 3.0;
+        e_iter->new_pos = new_pos;
+        e_iter++;
+    } while(e_iter != edges.end());
 
     // Vertices
+    auto calc_Q_R = [this](VertexRef v, Vec3& Q, Vec3& R) {
+        float d = 0.0f; // degree (i.e., number of neighboring faces)
+
+        // Iterate over neighbors.
+        HalfedgeCRef h = v->halfedge();
+        do {
+            // Add the contribution of the neighbor,
+            // and increment the number of neighbors.
+            Q += h->next()->face()->new_pos;
+            R += h->edge()->center();
+            d += 1.0f;
+            h = h->twin()->next();
+        } while(h != v->halfedge());
+
+        Q /= d; // compute the average
+        R /= d;
+    };
+
+    VertexRef v_iter = vertices_begin();
+    do {
+        float n = static_cast<float>(v_iter->degree());
+        Vec3 Q, R;
+        calc_Q_R(v_iter, Q, R);
+
+        v_iter->new_pos = (Q + 2.0f * R + (n - 3) * v_iter->pos) / n;
+        v_iter++;
+    } while(v_iter != vertices.end());
 }
 
 /*
