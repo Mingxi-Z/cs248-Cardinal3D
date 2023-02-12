@@ -1074,12 +1074,12 @@ struct Edge_Record {
         // -> Also store the cost associated with collapsing this edge in
         //    Edge_Record::cost.
         Mat4 A = edge_quadric;
+
+        Vec3 b(-edge_quadric[3][0], -edge_quadric[3][1], -edge_quadric[3][2]);
         for(int i = 0; i < 3; i++) {
             A[3][i] = A[i][3] = 0.0f;
         }
         A[3][3] = 1.0f;
-
-        Vec3 b = -edge_quadric[3].xyz();
 
         if(std::abs(A.det()) <= 1e-7f) {
             float cost1 = dot(Vec4(v1->pos, 1.0f), (edge_quadric * Vec4(v1->pos, 1.0f)));
@@ -1096,7 +1096,6 @@ struct Edge_Record {
                 cost = cost3;
                 optimal = e->center();
             }
-
         } else { 
             optimal = A.inverse() * b;
             cost = dot(Vec4(optimal, 1.0f), (edge_quadric * Vec4(optimal, 1.0f)));
@@ -1211,7 +1210,7 @@ bool Halfedge_Mesh::simplify() {
     // for the face in homogeneous coordinates. These quadrics should be stored
     // in face_quadrics
     for(FaceRef f = faces_begin(); f != faces_end(); f++) {
-        Vec3 p = f->halfedge()->vertex()->pos;
+        Vec3 p = f->center();
         Vec3 N = f->normal();
 
         float d = -dot(N, p);
@@ -1223,12 +1222,12 @@ bool Halfedge_Mesh::simplify() {
     //    associated with the incident faces, storing it in vertex_quadrics
     for(VertexRef v = vertices_begin(); v != vertices_end(); v++) {
         HalfedgeRef h = v->halfedge();
-
+        Mat4 K = Mat4::Zero;
         do {
-            vertex_quadrics[v] += face_quadrics[h->face()];
+            K += face_quadrics[h->face()];
             h = h->twin()->next();
         } while(h != v->halfedge());
-        
+        vertex_quadrics[v] = K;
     }
     // -> Build a priority queue of edges according to their quadric error cost,
     //    i.e., by building an Edge_Record for each edge and sticking it in the
@@ -1264,9 +1263,9 @@ bool Halfedge_Mesh::simplify() {
         collect_edges_vertex(v1, old_edges);
         collect_edges_vertex(v2, old_edges);
         old_edges.erase(cheapest_e);
-        for(EdgeRef e : old_edges) {
+        /*for(EdgeRef e : old_edges) {
             edge_queue.remove(edge_records[e]);
-        }
+        }*/
 
         // Collapse the edge.
         std::optional<VertexRef> v_new = collapse_edge(cheapest_e);
@@ -1274,10 +1273,13 @@ bool Halfedge_Mesh::simplify() {
         // If edge cannot be collapsed
         if (!v_new) {
             // Reinsert original edges back except the one try to collapse
-            for(EdgeRef e : old_edges) {
+            /*for(EdgeRef e : old_edges) {
                 edge_queue.insert(edge_records[e]);
-            }
+            }*/
         } else {
+            for(EdgeRef e : old_edges) {
+                edge_queue.remove(edge_records[e]);
+            }
             // Set the quadric of the new vertex to the quadric computed in Step 3.
             vertex_quadrics[v_new.value()] = new_quadric;
             v_new.value()->pos = cheapest_r.optimal;
