@@ -12,7 +12,19 @@ BBox Triangle::bbox() const {
     // Beware of flat/zero-volume boxes! You may need to
     // account for that here, or later on in BBox::intersect
 
-    BBox box;
+    Tri_Mesh_Vert v_0 = vertex_list[v0];
+    Tri_Mesh_Vert v_1 = vertex_list[v1];
+    Tri_Mesh_Vert v_2 = vertex_list[v2];
+
+    Vec3 p_0 = v_0.position;
+    Vec3 p_1 = v_1.position;
+    Vec3 p_2 = v_2.position;
+
+    Vec3 min_p = hmin(p_0, hmin(p_1, p_2));
+    Vec3 max_p = hmax(p_0, hmin(p_1, p_2));
+    
+    BBox box(min_p, max_p);
+
     return box;
 }
 
@@ -24,11 +36,6 @@ Trace Triangle::hit(const Ray& ray) const {
     Tri_Mesh_Vert v_0 = vertex_list[v0];
     Tri_Mesh_Vert v_1 = vertex_list[v1];
     Tri_Mesh_Vert v_2 = vertex_list[v2];
-
-    // here just to avoid unused variable warnings, students should remove the following three lines.
-    (void)v_0;
-    (void)v_1;
-    (void)v_2;
     
     // TODO (PathTracer): Task 2
     // Intersect this ray with a triangle defined by the above three points.
@@ -43,6 +50,38 @@ Trace Triangle::hit(const Ray& ray) const {
     ret.position = Vec3{}; // where was the intersection?
     ret.normal = Vec3{};   // what was the surface normal at the intersection?
                            // (this should be interpolated between the three vertex normals)
+
+    Vec3 e1 = v_1.position - v_0.position;
+    Vec3 e2 = v_2.position - v_0.position;
+    Vec3 s = ray.point - v_0.position;
+
+    Vec3 e1_cross_d = cross(e1, ray.dir);
+
+    float denom = dot(e1_cross_d, e2);
+
+    if(std::abs(denom) < std::numeric_limits<float>::epsilon()) {
+        return ret;
+    }
+
+    Vec3 s_cross_e2 = cross(s, e2);
+
+    Vec3 uvt =
+        Vec3(-dot(s_cross_e2, ray.dir), dot(e1_cross_d, s), -dot(s_cross_e2, e1)) / denom;
+
+    if(uvt.x + uvt.y > 1.0f || uvt.x < 0.0f || uvt.x > 1.0f || uvt.y < 0.0f || uvt.y > 1.0f) {
+        return ret;
+    }
+
+    if(uvt.z < ray.dist_bounds.x || uvt.z > ray.dist_bounds.y) {
+        return ret;
+    }
+
+    ret.hit = true;
+    ret.distance = uvt.z;
+    ret.position = ray.at(uvt.z); /*v_0.position + uvt.x * e1 + uvt.y * e2;*/
+    ret.normal = (1 - uvt.x - uvt.y) * v_0.normal + uvt.x * v_1.normal + uvt.y * v_2.normal;
+    
+    ray.dist_bounds.y = uvt.z;
     return ret;
 }
 
