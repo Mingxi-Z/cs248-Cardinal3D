@@ -21,18 +21,29 @@ Spectrum Pathtracer::trace_pixel(size_t x, size_t y) {
 
     // If n_samples is 1, please send the ray through the center of the pixel.
     // If n_samples > 1, please send the ray through any random point within the pixel
+    
+    Samplers::Rect::Uniform pixel(Vec2(1, 1));
+    float pdf;
+    if(n_samples > 1) {
+        Vec2 rand_xy = pixel.sample(pdf);
+        xy += rand_xy;
+    }
+    xy += 0.5;
 
     // Tip: consider making a call to Samplers::Rect::Uniform
 
     // Tip: you may want to use log_ray for debugging. Given ray t, the following lines
     // of code will log .03% of all rays (see util/rand.h) for visualization in the app.
     // see student/debug.h for more detail.
-    //if (RNG::coin_flip(0.0003f))
-    //    log_ray(out, 10.0f);
 
     // As an example, the code below generates a ray through the bottom left of the
     // specified pixel
+
     Ray out = camera.generate_ray(xy / wh);
+    //Ray out = camera.generate_ray(Vec2(1, 1));
+    if(RNG::coin_flip(0.0005f)) 
+        log_ray(out, 10.0f);
+
     return trace_ray(out);
 }
 
