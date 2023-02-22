@@ -72,45 +72,112 @@ void BVH<Primitive>::build(std::vector<Primitive>&& prims, size_t max_leaf_size)
     node.start = 0;
     node.size = primitives.size();
 
-    // Create bounding boxes for children
-    BBox split_leftBox;
-    BBox split_rightBox;
+    // Creating Buckets in each direction
+    const int n_buckets = 8;
+    
+    struct bucket {
+        BBox bbox;
+        size_t prim_count = 0;
+    };
 
-    // compute bbox for left child
-    Primitive& p = primitives[0];
-    BBox pbb = p.bbox();
-    split_leftBox.enclose(pbb);
+    // Create n_buckets buckets for each axis
 
-    // compute bbox for right child
-    for(size_t i = 1; i < primitives.size(); ++i) {
-        Primitive& p = primitives[i];
-        BBox pbb = p.bbox();
-        split_rightBox.enclose(pbb);
-    }
+    auto bucket_partition = [this, n_buckets, max_leaf_size](
+                                size_t parent_idx, auto&& bucket_partition,
+                                std::vector<Primitive>& primitives, std::vector<Node>& nodes) {
+        Node& parent = nodes[parent_idx];
 
-    // Note that by construction in this simple example, the primitives are
-    // contiguous as required. But in the students real code, students are
-    // responsible for reorganizing the primitives in the primitives array so that
-    // after a SAH split is computed, the chidren refer to contiguous ranges of primitives.
+        if(parent.size <= max_leaf_size) return;
 
-    size_t startl = 0;  // starting prim index of left child
-    size_t rangel = 1;  // number of prims in left child
-    size_t startr = startl + rangel;  // starting prim index of right child
-    size_t ranger = primitives.size() - rangel; // number of prims in right child
+        // Get dimension of the box
+        Vec3 min_pt = parent.bbox.min;
+        Vec3 max_pt = parent.bbox.max;
 
-    // create child nodes
-    size_t node_addr_l = new_node();
-    size_t node_addr_r = new_node();
-    nodes[root_node_addr].l = node_addr_l;
-    nodes[root_node_addr].r = node_addr_r;
+        Vec3 dimension = max_pt - min_pt;
 
-    nodes[node_addr_l].bbox = split_leftBox;
-    nodes[node_addr_l].start = startl;
-    nodes[node_addr_l].size = rangel;
+        std::vector<std::vector<bucket>> buckets(3, std::vector(n_buckets, bucket()));
+        bucket left_best, right_best;
+        float min_cost = std::numeric_limits<float>::max();
 
-    nodes[node_addr_r].bbox = split_rightBox;
-    nodes[node_addr_r].start = startr;
-    nodes[node_addr_r].size = ranger;
+        for(int axis = 0; axis < 3; ++axis) {
+            float bucket_width = dimension[axis] / n_buckets;
+
+            // For each p in prims
+            size_t end = parent.start + parent.size;
+            for(size_t j = parent.start; j < end; ++j) {
+                Primitive& p = primitives[j];
+
+                // Compute Bucket Index for p
+                BBox pbox = p.bbox();
+                Vec3 center = pbox.center();
+
+                int bucket_idx = (int)std::floorf((center - min_pt)[axis] / bucket_width);
+                // if(bucket_idx >= n_buckets) bucket_idx = n_buckets - 1;
+                bucket_idx = std::clamp(bucket_idx, 0, n_buckets - 1);
+                bucket& b = buckets[axis][bucket_idx];
+                b.bbox.enclose(pbox);
+                b.prim_count++;
+            }
+
+            // Evaluate SAH for each plane
+            bucket left, right;
+            left.bbox.enclose(buckets[axis][0].bbox);
+            left.prim_count += buckets[axis][0].prim_count;
+
+            for(int l = 1; l < n_buckets - 1; ++l) {
+                
+
+                bucket& cur = buckets[axis][l];
+                left.bbox.enclose(cur.bbox);
+                left.prim_count += cur.prim_count;
+                
+                right.bbox.reset();
+                right.prim_count = 0;
+
+                for(int r = l + 1; r < n_buckets; ++r) {
+                    cur = buckets[axis][r];
+                    right.bbox.enclose(cur.bbox);
+                    right.prim_count += cur.prim_count;
+                }
+
+                float parent_surface = parent.bbox.surface_area();
+                float cost = left.bbox.surface_area() / parent_surface * left.prim_count;
+                cost += right.bbox.surface_area() / parent_surface * right.prim_count;
+
+                if(cost < min_cost) {
+                    left_best = left;
+                    right_best = right;
+                    min_cost = cost;
+                }
+            }
+        }
+
+        size_t right_start = std::partition(primitives.begin() + parent.start,
+                                            primitives.begin() + parent.start + parent.size,
+                                            [left_best = left_best](const Primitive& x) {
+                                                BBox cur = x.bbox();
+                                                BBox left = left_best.bbox;
+
+                                                bool less_than_max = cur.max.x <= left.max.x &&
+                                                                     cur.max.y <= left.max.y &&
+                                                                     cur.max.z <= left.max.z;
+                                                bool larger_than_min = cur.min.x >= left.min.x &&
+                                                                       cur.min.y >= left.min.y &&
+                                                                       cur.min.z >= left.min.z;
+
+                                                return less_than_max && larger_than_min;
+                                            }) -
+                             primitives.begin();
+
+        if(right_start == parent.start || right_start == parent.start + parent.size) return;
+        nodes[parent_idx].l =
+            new_node(left_best.bbox, parent.start, right_start - parent.start, 0, 0);
+        nodes[parent_idx].r = new_node(right_best.bbox, right_start, right_best.prim_count, 0, 0);
+
+        bucket_partition(nodes[parent_idx].l, bucket_partition, primitives, nodes);
+        bucket_partition(nodes[parent_idx].r, bucket_partition, primitives, nodes);
+    };
+    bucket_partition(root_node_addr, bucket_partition, primitives, nodes);
 }
 
 template<typename Primitive>
