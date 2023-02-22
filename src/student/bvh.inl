@@ -76,108 +76,126 @@ void BVH<Primitive>::build(std::vector<Primitive>&& prims, size_t max_leaf_size)
     const int n_buckets = 8;
     
     struct bucket {
-        BBox bbox;
+        BBox bbox = BBox::BBox();
         size_t prim_count = 0;
     };
 
     // Create n_buckets buckets for each axis
 
-    auto bucket_partition = [this, n_buckets, max_leaf_size](
-                                size_t parent_idx, auto&& bucket_partition,
-                                std::vector<Primitive>& primitives, std::vector<Node>& nodes) {
-        Node& parent = nodes[parent_idx];
+    int iter = 0;
 
-        if(parent.size <= max_leaf_size) return;
-
+    do {
+        if(nodes[iter].size <= max_leaf_size) {
+            ++iter;
+            continue;
+        }
+        
         // Get dimension of the box
-        Vec3 min_pt = parent.bbox.min;
-        Vec3 max_pt = parent.bbox.max;
+        Vec3 min_pt = nodes[iter].bbox.min;
+        Vec3 max_pt = nodes[iter].bbox.max;
 
         Vec3 dimension = max_pt - min_pt;
 
-        std::vector<std::vector<bucket>> buckets(3, std::vector(n_buckets, bucket()));
-        bucket left_best, right_best;
+        int best_axis = 0;
+        float best_split_coord = 0;
+
         float min_cost = std::numeric_limits<float>::max();
 
+        // For each axis
         for(int axis = 0; axis < 3; ++axis) {
+            bucket buckets[n_buckets];
+
             float bucket_width = dimension[axis] / n_buckets;
 
             // For each p in prims
-            size_t end = parent.start + parent.size;
-            for(size_t j = parent.start; j < end; ++j) {
+            size_t end = nodes[iter].start + nodes[iter].size;
+            for(size_t j = nodes[iter].start; j < end; ++j) {
                 Primitive& p = primitives[j];
 
                 // Compute Bucket Index for p
                 BBox pbox = p.bbox();
                 Vec3 center = pbox.center();
 
-                int bucket_idx = (int)std::floorf((center - min_pt)[axis] / bucket_width);
-                // if(bucket_idx >= n_buckets) bucket_idx = n_buckets - 1;
+                int bucket_idx = (int)std::floorf((center[axis] - min_pt[axis]) / bucket_width);
+
                 bucket_idx = std::clamp(bucket_idx, 0, n_buckets - 1);
-                bucket& b = buckets[axis][bucket_idx];
-                b.bbox.enclose(pbox);
-                b.prim_count++;
+
+                // Add to bucket
+                buckets[bucket_idx].bbox.enclose(pbox);
+                buckets[bucket_idx].prim_count++;
             }
 
             // Evaluate SAH for each plane
-            bucket left, right;
-            left.bbox.enclose(buckets[axis][0].bbox);
-            left.prim_count += buckets[axis][0].prim_count;
+            bucket left{}, right{};
 
-            for(int l = 1; l < n_buckets - 1; ++l) {
-                
-
-                bucket& cur = buckets[axis][l];
+            for(int l = 0; l < n_buckets - 1; ++l) {
+                bucket& cur = buckets[l];
                 left.bbox.enclose(cur.bbox);
                 left.prim_count += cur.prim_count;
-                
+
                 right.bbox.reset();
                 right.prim_count = 0;
 
                 for(int r = l + 1; r < n_buckets; ++r) {
-                    cur = buckets[axis][r];
+                    cur = buckets[r];
                     right.bbox.enclose(cur.bbox);
                     right.prim_count += cur.prim_count;
                 }
 
-                float parent_surface = parent.bbox.surface_area();
+                float parent_surface = nodes[iter].bbox.surface_area();
                 float cost = left.bbox.surface_area() / parent_surface * left.prim_count;
                 cost += right.bbox.surface_area() / parent_surface * right.prim_count;
 
                 if(cost < min_cost) {
-                    left_best = left;
-                    right_best = right;
+                    best_axis = axis;
                     min_cost = cost;
+                    best_split_coord = bucket_width * (l + 1);
                 }
             }
         }
 
-        size_t right_start = std::partition(primitives.begin() + parent.start,
-                                            primitives.begin() + parent.start + parent.size,
-                                            [left_best = left_best](const Primitive& x) {
+        best_split_coord += min_pt[best_axis];
+
+        // Reorder nodes based on split_coordinate and axis
+        size_t right_start = std::partition(primitives.begin() + nodes[iter].start,
+                                            primitives.begin() + nodes[iter].start + nodes[iter].size,
+                                            [best_axis, best_split_coord](const Primitive& x) {
                                                 BBox cur = x.bbox();
-                                                BBox left = left_best.bbox;
-
-                                                bool less_than_max = cur.max.x <= left.max.x &&
-                                                                     cur.max.y <= left.max.y &&
-                                                                     cur.max.z <= left.max.z;
-                                                bool larger_than_min = cur.min.x >= left.min.x &&
-                                                                       cur.min.y >= left.min.y &&
-                                                                       cur.min.z >= left.min.z;
-
-                                                return less_than_max && larger_than_min;
+                                                return cur.center()[best_axis] <= best_split_coord;
                                             }) -
                              primitives.begin();
 
-        if(right_start == parent.start || right_start == parent.start + parent.size) return;
-        nodes[parent_idx].l =
-            new_node(left_best.bbox, parent.start, right_start - parent.start, 0, 0);
-        nodes[parent_idx].r = new_node(right_best.bbox, right_start, right_best.prim_count, 0, 0);
+        if(right_start == nodes[iter].start || right_start == nodes[iter].start + nodes[iter].size) {
+            ++iter;
+            continue;
+        }
 
-        bucket_partition(nodes[parent_idx].l, bucket_partition, primitives, nodes);
-        bucket_partition(nodes[parent_idx].r, bucket_partition, primitives, nodes);
-    };
-    bucket_partition(root_node_addr, bucket_partition, primitives, nodes);
+        // Construct Left and Right node
+        BBox left{}, right{};
+        int left_cnt = 0, right_cnt = 0;
+        for(size_t i = nodes[iter].start; i < right_start; ++i) {
+            Primitive& p = primitives[i];
+
+            BBox pbox = p.bbox();
+            Vec3 center = pbox.center();
+
+            left.enclose(pbox);
+            left_cnt++;
+        }
+
+        for(size_t i = right_start; i < nodes[iter].start + nodes[iter].size; ++i) {
+            Primitive& p = primitives[i];
+            BBox pbox = p.bbox();
+            Vec3 center = pbox.center();
+
+            right.enclose(pbox);
+            right_cnt++;
+        }
+
+        nodes[iter].l = new_node(left, nodes[iter].start, left_cnt, 0, 0);
+        nodes[iter].r = new_node(right, right_start, right_cnt, 0, 0);
+        ++iter;
+    } while(iter < nodes.size());
 }
 
 template<typename Primitive>
@@ -192,10 +210,15 @@ Trace BVH<Primitive>::hit(const Ray& ray) const {
     // Again, remember you can use hit() on any Primitive value.
 
     Trace ret;
+
+
+
     for(const Primitive& prim : primitives) {
         Trace hit = prim.hit(ray);
         ret = Trace::min(ret, hit);
     }
+
+
     return ret;
 }
 
