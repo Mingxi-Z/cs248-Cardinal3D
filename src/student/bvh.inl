@@ -109,6 +109,7 @@ void BVH<Primitive>::build(std::vector<Primitive>&& prims, size_t max_leaf_size)
 
             // For each p in prims
             size_t end = nodes[iter].start + nodes[iter].size;
+
             for(size_t j = nodes[iter].start; j < end; ++j) {
                 Primitive& p = primitives[j];
 
@@ -127,9 +128,13 @@ void BVH<Primitive>::build(std::vector<Primitive>&& prims, size_t max_leaf_size)
 
             // Evaluate SAH for each plane
             bucket left{}, right{};
+            float parent_surface = nodes[iter].bbox.surface_area();
 
             for(int l = 0; l < n_buckets - 1; ++l) {
                 bucket& cur = buckets[l];
+                // Skip empty bucket
+                if(cur.prim_count == 0) continue;
+
                 left.bbox.enclose(cur.bbox);
                 left.prim_count += cur.prim_count;
 
@@ -142,7 +147,6 @@ void BVH<Primitive>::build(std::vector<Primitive>&& prims, size_t max_leaf_size)
                     right.prim_count += cur.prim_count;
                 }
 
-                float parent_surface = nodes[iter].bbox.surface_area();
                 float cost = left.bbox.surface_area() / parent_surface * left.prim_count;
                 cost += right.bbox.surface_area() / parent_surface * right.prim_count;
 
@@ -174,24 +178,17 @@ void BVH<Primitive>::build(std::vector<Primitive>&& prims, size_t max_leaf_size)
         BBox left{}, right{};
         int left_cnt = 0, right_cnt = 0;
         for(size_t i = nodes[iter].start; i < right_start; ++i) {
-            Primitive& p = primitives[i];
-
-            BBox pbox = p.bbox();
-            Vec3 center = pbox.center();
-
-            left.enclose(pbox);
+            left.enclose(primitives[i].bbox());
             left_cnt++;
         }
 
         for(size_t i = right_start; i < nodes[iter].start + nodes[iter].size; ++i) {
-            Primitive& p = primitives[i];
-            BBox pbox = p.bbox();
-            Vec3 center = pbox.center();
-
-            right.enclose(pbox);
+            right.enclose(primitives[i].bbox());
             right_cnt++;
         }
 
+        assert(left.min.x >= nodes[iter].bbox.min.x && left.max.y <= nodes[iter].bbox.max.y &&
+               right.min.x >= nodes[iter].bbox.min.x && right.max.y <= nodes[iter].bbox.max.y);
         nodes[iter].l = new_node(left, nodes[iter].start, left_cnt, 0, 0);
         nodes[iter].r = new_node(right, right_start, right_cnt, 0, 0);
         ++iter;
@@ -210,15 +207,50 @@ Trace BVH<Primitive>::hit(const Ray& ray) const {
     // Again, remember you can use hit() on any Primitive value.
 
     Trace ret;
+    
+    auto find_hit = [&, this, ray](auto& self, size_t idx, auto& nodes, Trace& ret) -> void { 
+        Node cur = nodes[idx];
 
+        if(nodes[idx].is_leaf()) {
+            size_t start = cur.start;
+            size_t end = start + cur.size;
+            for(size_t i = cur.start; i < end; ++i) {
+                Trace hit = primitives[i].hit(ray);
+                ret = Trace::min(ret, hit);
+            }
+        } else {
+            Vec2 time1, time2;
+            bool hit1 = nodes[cur.l].bbox.hit(ray, time1);
+            bool hit2 = nodes[cur.r].bbox.hit(ray, time2);
 
+            size_t first = cur.l,
+                second = cur.r;
 
-    for(const Primitive& prim : primitives) {
-        Trace hit = prim.hit(ray);
-        ret = Trace::min(ret, hit);
-    }
+            if(hit1 && hit2) {
+                if(time1.x >= time2.x) {
+                    std::swap(first, second);
+                    std::swap(time1, time2);
+                }
+                self(self, first, nodes, ret);
 
+                if(time2.x < ray.dist_bounds.y) {
+                    self(self, second, nodes, ret);
+                }
+            } else if(hit1){
+                self(self, first, nodes, ret);
+            } else if(hit2) {
+                self(self, second, nodes, ret);
+            }
+        }
+    };
 
+    Vec2 time;
+
+    bool hit = nodes[0].bbox.hit(ray, time);
+    if(!hit) return ret;
+
+    find_hit(find_hit, 0, nodes, ret);
+    
     return ret;
 }
 

@@ -19,11 +19,12 @@ BBox Triangle::bbox() const {
     Vec3 p_0 = v_0.position;
     Vec3 p_1 = v_1.position;
     Vec3 p_2 = v_2.position;
-
-    Vec3 min_p = hmin(p_0, hmin(p_1, p_2));
-    Vec3 max_p = hmax(p_0, hmin(p_1, p_2));
     
-    BBox box(min_p, max_p);
+    BBox box;
+
+    box.enclose(p_0);
+    box.enclose(p_1);
+    box.enclose(p_2);
 
     return box;
 }

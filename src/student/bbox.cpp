@@ -15,18 +15,15 @@ bool BBox::hit(const Ray& ray, Vec2& times) const {
     Vec3 t_max_vec = a * max + b;
 
     for(int i = 0; i < 3; i++) {
-        if(t_min_vec[i] > t_max_vec[i]) {
-            float temp = t_min_vec[i];
-            t_min_vec[i] = t_max_vec[i];
-            t_max_vec[i] = temp;
-            // std::swap(t_min_vec[i], t_max_vec[i]);
+        if(a[i] < 0) {
+            std::swap(t_min_vec[i], t_max_vec[i]);
         }
     }
 
     float t_min = std::max({t_min_vec[0], t_min_vec[1], t_min_vec[2], ray.dist_bounds.x});
     float t_max = std::min({t_max_vec[0], t_max_vec[1], t_max_vec[2], ray.dist_bounds.y});
     
-    if(t_min > times.x && t_max < times.y) {
+    if(t_min >= times.x && t_max <= times.y) {
         times.x = t_min;
         times.y = t_max;
     }

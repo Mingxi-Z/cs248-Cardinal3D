@@ -84,11 +84,10 @@ Spectrum Pathtracer::trace_ray(const Ray& ray) {
     // The starter code sets radiance_out to (0.25,0.25,0.25) so that you can test your geometry
     // queries before you implement real lighting in Tasks 4 and 5. (i.e, anything that gets hit is not black.)
     // You should change this to (0,0,0) and accumulate the direct and indirect lighting computed below.
-    Spectrum radiance_out = Spectrum(0.25f);
+    Spectrum radiance_out = Spectrum(0.0f);
     {
-
         // lambda function to sample a light. Called in loop below.
-        auto sample_light = [&](const auto& light) {
+        auto sample_light = [&](const auto& light, const BVH<Object>& scene) {
             // If the light is discrete (e.g. a point light), then we only need
             // one sample, as all samples will be equivalent
             int samples = light.is_discrete() ? 1 : (int)n_area_samples;
@@ -112,7 +111,15 @@ Spectrum Pathtracer::trace_ray(const Ray& ray) {
                 // TODO (PathTracer): Task 4
                 // Construct a shadow ray and compute whether the intersected surface is
                 // in shadow. Only accumulate light if not in shadow.
+                // Trace ray into scene. If nothing is hit, sample the environment
+                Ray shadow(hit.position, sample.direction);
+                shadow.dist_bounds.x = EPS_F;
+                shadow.dist_bounds.y = sample.distance / sample.direction.norm() - EPS_F;
 
+                Trace shadow_hit = scene.hit(shadow);
+                if(shadow_hit.hit) {
+                    return; 
+                }
                 // Tip: since you're creating the shadow ray at the intersection point, it may
                 // intersect the surface at time=0. Similarly, if the ray is allowed to have
                 // arbitrary length, it will hit the light it was cast at. Therefore, you should
@@ -132,9 +139,8 @@ Spectrum Pathtracer::trace_ray(const Ray& ray) {
 
             // loop over all the lights and accumulate radiance.
             for(const auto& light : lights)
-                sample_light(light);
-            if(env_light.has_value())
-                sample_light(env_light.value());
+                sample_light(light, scene);
+            if(env_light.has_value()) sample_light(env_light.value(), scene);
         }
     }
 
