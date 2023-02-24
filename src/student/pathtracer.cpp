@@ -168,25 +168,31 @@ Spectrum Pathtracer::trace_ray(const Ray& ray) {
     // you should modify time_bounds so that the ray does not intersect at time = 0. Remember to
     // set the new throughput and depth values.
     new_ray.dist_bounds.x = EPS_F;
-    new_ray.depth = ray.depth + 1;
+    new_ray.depth = ray.depth + !bsdf.is_discrete();
     new_ray.prev_material = hit.material;
     float q = 1.0f - std::min(1.0f, new_ray.throughput.luma());
 
     if((float)rand() / (float)RAND_MAX < q) {
-        return ((ray.depth == 0 || materials[ray.prev_material].is_discrete())
-                    ? ray.throughput * new_sample.emissive
+        return ((ray.depth == 0)
+                    ? new_sample.emissive
                     : Spectrum()) +
                radiance_out;
     }
 
     new_ray.throughput = new_ray.throughput / (1 - q);
 
+    if(bsdf.is_discrete()) {
+        max_depth--;
+    }
     Spectrum radiance_indirect = trace_ray(new_ray);
     
     // (5) Add contribution due to incoming light with proper weighting. Remember to add in
     // the BSDF sample emissive term.
-    return ((ray.depth == 0 || materials[ray.prev_material].is_discrete())
-                ? ray.throughput * new_sample.emissive
+    if(bsdf.is_discrete()) {
+        max_depth++;
+    }
+    return ((ray.depth == 0)
+                ? new_sample.emissive
                 : Spectrum()) +
            radiance_out + radiance_indirect;
 }
