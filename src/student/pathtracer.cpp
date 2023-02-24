@@ -50,6 +50,7 @@ Spectrum Pathtracer::trace_pixel(size_t x, size_t y) {
 Spectrum Pathtracer::trace_ray(const Ray& ray) {
 
     // Trace ray into scene. If nothing is hit, sample the environment
+    
     Trace hit = scene.hit(ray);
     if(!hit.hit) {
         if(env_light.has_value()) {
@@ -114,7 +115,7 @@ Spectrum Pathtracer::trace_ray(const Ray& ray) {
                 // Trace ray into scene. If nothing is hit, sample the environment
                 Ray shadow(hit.position, sample.direction);
                 shadow.dist_bounds.x = EPS_F;
-                shadow.dist_bounds.y = sample.distance / sample.direction.norm() - EPS_F;
+                shadow.dist_bounds.y = sample.distance - EPS_F;
 
                 Trace shadow_hit = scene.hit(shadow);
                 if(shadow_hit.hit) {
@@ -129,7 +130,7 @@ Spectrum Pathtracer::trace_ray(const Ray& ray) {
                 // Note: that along with the typical cos_theta, pdf factors, we divide by samples.
                 // This is because we're doing another monte-carlo estimate of the lighting from
                 // area lights here.
-                radiance_out += ray.beta * (cos_theta / (samples * sample.pdf)) * sample.radiance * attenuation;
+                radiance_out += ray.throughput * (cos_theta / (samples * sample.pdf)) * sample.radiance * attenuation;
             }
         };
 
@@ -153,36 +154,41 @@ Spectrum Pathtracer::trace_ray(const Ray& ray) {
         return radiance_out;
     // (2) Randomly select a new ray direction (it may be reflection or transmittance
     // ray depending on surface type) using bsdf.sample()
-    BSDF_Sample new_sample = bsdf.sample(-ray.dir);
+    BSDF_Sample new_sample = bsdf.sample(world_to_object.rotate(- ray.dir));
     // (3) Compute the throughput of the recursive ray. This should be the current ray's
     // throughput scaled by the BSDF attenuation, cos(theta), and BSDF sample PDF.
     // Potentially terminate the path using Russian roulette as a function of the new
     // throughput. Note that allowing the termination probability to approach 1 may cause extra
     // speckling.
     Ray new_ray(hit.position, object_to_world.rotate(new_sample.direction).unit());
+    new_ray.throughput =
+        ray.throughput * new_sample.attenuation * dot(hit.normal, -ray.dir) / new_sample.pdf;
 
     // (4) Create new scene-space ray and cast it to get incoming light. As with shadow rays,
     // you should modify time_bounds so that the ray does not intersect at time = 0. Remember to
     // set the new throughput and depth values.
     new_ray.dist_bounds.x = EPS_F;
     new_ray.depth = ray.depth + 1;
-    new_ray.beta = ray.beta * new_sample.attenuation * dot(hit.normal, out_dir) / new_sample.pdf;
-    //new_ray.throughput = new_sample.attenuation;
-    float q = 1 - new_ray.beta.luma();
-    
+    new_ray.prev_material = hit.material;
+    float q = 1.0f - std::min(1.0f, new_ray.throughput.luma());
+
     if((float)rand() / (float)RAND_MAX < q) {
-        return (ray.depth == 0 ? new_sample.emissive : Spectrum()) + radiance_out;
+        return ((ray.depth == 0 || materials[ray.prev_material].is_discrete())
+                    ? ray.throughput * new_sample.emissive
+                    : Spectrum()) +
+               radiance_out;
     }
 
-    new_ray.beta = new_ray.beta / (1 - q);
+    new_ray.throughput = new_ray.throughput / (1 - q);
 
     Spectrum radiance_indirect = trace_ray(new_ray);
-    radiance_indirect =
-        new_sample.attenuation * radiance_indirect * dot(hit.normal, out_dir) / new_sample.pdf;
     
     // (5) Add contribution due to incoming light with proper weighting. Remember to add in
     // the BSDF sample emissive term.
-    return (ray.depth == 0 ? new_sample.emissive : Spectrum()) + radiance_out + radiance_indirect;
+    return ((ray.depth == 0 || materials[ray.prev_material].is_discrete())
+                ? ray.throughput * new_sample.emissive
+                : Spectrum()) +
+           radiance_out + radiance_indirect;
 }
 
 } // namespace PT

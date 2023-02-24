@@ -10,6 +10,7 @@ bool BBox::hit(const Ray& ray, Vec2& times) const {
     // [times.x,times.y], update times with the new intersection times.
     Vec3 a = 1.0f / ray.dir;
     Vec3 b = -ray.point / ray.dir;
+    if(this == nullptr) return false;
 
     Vec3 t_min_vec = a * min + b;
     Vec3 t_max_vec = a * max + b;
