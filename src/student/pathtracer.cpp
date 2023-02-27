@@ -150,8 +150,9 @@ Spectrum Pathtracer::trace_ray(const Ray& ray) {
 
     // (1) Ray objects have a depth field; if it reaches max_depth, you should
     // terminate the path.
-    if(ray.depth >= max_depth)
-        return radiance_out;
+    if(ray.depth >= max_depth) {
+        return {};
+    }
     // (2) Randomly select a new ray direction (it may be reflection or transmittance
     // ray depending on surface type) using bsdf.sample()
     BSDF_Sample new_sample = bsdf.sample(world_to_object.rotate(- ray.dir));
@@ -169,31 +170,21 @@ Spectrum Pathtracer::trace_ray(const Ray& ray) {
     // set the new throughput and depth values.
     new_ray.dist_bounds.x = EPS_F;
     new_ray.depth = ray.depth + !bsdf.is_discrete();
-    new_ray.prev_material = hit.material;
+
     float q = 1.0f - std::min(1.0f, new_ray.throughput.luma());
 
-    if((float)rand() / (float)RAND_MAX < q) {
-        return ((ray.depth == 0)
-                    ? new_sample.emissive
-                    : Spectrum()) +
-               radiance_out;
+    float rand_num = (float)rand() / (float)RAND_MAX;
+    if(rand_num < q) {
+        return ((ray.depth == 0) ? ray.throughput * new_sample.emissive : Spectrum()) + radiance_out;
     }
 
     new_ray.throughput = new_ray.throughput / (1 - q);
 
-    if(bsdf.is_discrete()) {
-        max_depth--;
-    }
     Spectrum radiance_indirect = trace_ray(new_ray);
     
     // (5) Add contribution due to incoming light with proper weighting. Remember to add in
     // the BSDF sample emissive term.
-    if(bsdf.is_discrete()) {
-        max_depth++;
-    }
-    return ((ray.depth == 0)
-                ? new_sample.emissive
-                : Spectrum()) +
+    return ((ray.depth == 0) ? ray.throughput * new_sample.emissive : Spectrum()) +
            radiance_out + radiance_indirect;
 }
 
