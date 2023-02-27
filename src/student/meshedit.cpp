@@ -176,7 +176,7 @@ std::optional<Halfedge_Mesh::FaceRef> Halfedge_Mesh::erase_edge(Halfedge_Mesh::E
 
     f1->halfedge() = hs1[2]; 
 
-    for(int i = 0; i < hs2.size(); i += 2) {
+    for(size_t i = 0; i < hs2.size(); i += 2) {
         hs2[i]->face() = f1;
     }
 
@@ -221,11 +221,11 @@ std::optional<Halfedge_Mesh::VertexRef> Halfedge_Mesh::collapse_edge(Halfedge_Me
     
     std::set<VertexRef> neighbors;
     int cnt_vertex = 0;
-    for(int i = 1; i < hs_1.size(); i += 2) {
+    for(size_t i = 1; i < hs_1.size(); i += 2) {
         neighbors.insert(hs_1[i]->vertex());
         cnt_vertex++;
     }
-    for(int i = 1; i < hs_2.size(); i += 2) {
+    for(size_t i = 1; i < hs_2.size(); i += 2) {
         neighbors.insert(hs_2[i]->vertex());
         cnt_vertex++;
     }
@@ -261,11 +261,11 @@ std::optional<Halfedge_Mesh::VertexRef> Halfedge_Mesh::collapse_edge(Halfedge_Me
     VertexRef v_new = h2->vertex();
     v_new->pos = e->center();
 
-    for(int i = 0; i < hs_1.size(); i += 2) {
+    for(size_t i = 0; i < hs_1.size(); i += 2) {
         hs_1[i]->vertex() = v_new;
     }
 
-    for(int i = 0; i < hs_2.size(); i += 2) {
+    for(size_t i = 0; i < hs_2.size(); i += 2) {
         hs_2[i]->vertex() = v_new;
     }
 
@@ -376,26 +376,26 @@ std::optional<Halfedge_Mesh::EdgeRef> Halfedge_Mesh::flip_edge(Halfedge_Mesh::Ed
 
     size_t n_vertex = v.size();
     size_t n_halfedge = h.size();
-    for(int i = 2; i < h.size(); i+=2) {
-        int vertex_index = (i / 2) % n_vertex;
+    for(size_t i = 2; i < h.size(); i += 2) {
+        size_t vertex_index = (i / 2) % n_vertex;
         h[i]->vertex() = v[vertex_index];
-        int edge_index = (i / 2) % n_vertex + 1;
+        size_t edge_index = (i / 2) % n_vertex + 1;
         h[i]->edge() = ed[edge_index];
-        int twin_index = i % (n_halfedge - 2) + 3;
+        size_t twin_index = i % (n_halfedge - 2) + 3;
         h[i]->twin() = h[twin_index];
         h[twin_index]->twin() = h[i];
     }
 
     // Reassign edge
-    for(int i = 2; i < ed.size(); i++) {
-        int inside_index = 2 * (i - 1);
+    for(size_t i = 2; i < ed.size(); i++) {
+        size_t inside_index = 2 * (i - 1);
         ed[i]->halfedge() = h[inside_index];
     }
 
     ed[1]->halfedge() = h[h.size() - 2];
 
     // Reassign Vertex
-    for(int i = 1; i < v.size(); i++) {
+    for(size_t i = 1; i < v.size(); i++) {
         v[i]->halfedge() = h[i * 2];
     }
 
@@ -513,8 +513,8 @@ std::optional<Halfedge_Mesh::VertexRef> Halfedge_Mesh::split_edge(Halfedge_Mesh:
     if(boundary) {
         start_idx = 3;
     }
-    for(int i = start_idx; i < ed.size(); i++) {
-        int idx = i * 2;
+    for(size_t i = start_idx; i < ed.size(); i++) {
+        size_t idx = i * 2;
         ed[i]->halfedge() = h[idx];
     }
 
@@ -776,7 +776,6 @@ void Halfedge_Mesh::bevel_face_positions(const std::vector<Vec3>& start_position
     
     int N = (int) new_halfedges.size();
     Vec3 normal = normal_offset * face->normal();
-    Vec3 new_center = normal + face->center();
     for(int i = 0; i < N; i++) {
         Vec3 pi = start_positions[i]; // get the original vertex
        
@@ -981,7 +980,7 @@ void Halfedge_Mesh::catmullclark_subdivide_positions() {
     } while(e_iter != edges.end());
 
     // Vertices
-    auto calc_Q_R = [this](VertexRef v, Vec3& Q, Vec3& R) {
+    auto calc_Q_R = [](VertexRef v, Vec3& Q, Vec3& R) {
         float d = 0.0f; // degree (i.e., number of neighboring faces)
 
         // Iterate over neighbors.
