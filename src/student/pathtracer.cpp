@@ -118,9 +118,7 @@ Spectrum Pathtracer::trace_ray(const Ray& ray) {
                 shadow.dist_bounds.y = sample.distance - EPS_F;
 
                 Trace shadow_hit = scene.hit(shadow);
-                if(shadow_hit.hit) {
-                    return; 
-                }
+                
                 // Tip: since you're creating the shadow ray at the intersection point, it may
                 // intersect the surface at time=0. Similarly, if the ray is allowed to have
                 // arbitrary length, it will hit the light it was cast at. Therefore, you should
@@ -130,7 +128,10 @@ Spectrum Pathtracer::trace_ray(const Ray& ray) {
                 // Note: that along with the typical cos_theta, pdf factors, we divide by samples.
                 // This is because we're doing another monte-carlo estimate of the lighting from
                 // area lights here.
-                radiance_out += ray.throughput * (cos_theta / (samples * sample.pdf)) * sample.radiance * attenuation;
+                if(!shadow_hit.hit) {
+                    radiance_out += ray.throughput * (cos_theta / (samples * sample.pdf)) *
+                                    sample.radiance * attenuation;
+                }
             }
         };
 
