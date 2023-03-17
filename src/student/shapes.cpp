@@ -36,6 +36,10 @@ Trace Sphere::hit(const Ray& ray) const {
     float b = a * a - ray.point.norm_squared() + radius * radius;
     float t1 = a - std::sqrt(b);
     float t2 = a + std::sqrt(b);
+    
+    if(b < 0.0f) {
+        return ret;
+    }
 
     if(t1 > ray.dist_bounds.y || t2 < ray.dist_bounds.x) {
         return ret;
