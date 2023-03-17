@@ -1,5 +1,6 @@
 
 #include "../util/camera.h"
+#include "../util/rand.h"
 #include "../rays/samplers.h"
 #include "debug.h"
 
@@ -29,6 +30,25 @@ Ray Camera::generate_ray(Vec2 screen_coord) const {
     // Tip: compute the ray direction in view space and use
     // the camera space to world space transform (iview) to transform the ray back into world space.
     Ray r(Vec3(0, 0, 0), sensor_pos);
+
+    if (aperture > 0) {
+        // Sample point on lens
+        auto sampleDisk = [](float radius) -> Vec2 {
+            float angle = RNG::unit() * 2 * PI_F;
+            float r = radius * RNG::unit();
+            return Vec2(r * cosf(angle), r * sinf(angle));
+        };
+        Vec2 pLens = sampleDisk(aperture);
+
+        // Compute point on plane of focus
+        float ft = focal_dist / r.dir.z;
+        Vec3 pFocus = r.at(ft);
+
+        // Update ray for effect of lens
+        r.point = Vec3(pLens.x, pLens.y, 0.0f);
+        r.dir = (r.point - pFocus);
+    }
+
     r.transform(iview);
     return r;
 }
