@@ -76,13 +76,14 @@ void BVH<Primitive>::build(std::vector<Primitive>&& prims, size_t max_leaf_size)
     const int n_buckets = 8;
     
     struct bucket {
-        BBox bbox = BBox::BBox();
-        size_t prim_count = 0;
+        BBox bbox;
+        size_t prim_count;
+        bucket() : bbox(), prim_count(0) {}
     };
 
     // Create n_buckets buckets for each axis
 
-    int iter = 0;
+    size_t iter = 0;
 
     do {
         if(nodes[iter].size <= max_leaf_size) {

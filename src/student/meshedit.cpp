@@ -800,7 +800,7 @@ void Halfedge_Mesh::triangulate() {
     size_t cur_faces = n_faces();
 
     FaceRef iter = faces_begin();
-    int cur_idx = 0;
+    size_t cur_idx = 0;
 
     auto split_single = [this](FaceRef f, auto&& split_single) {
         if(f->degree() == 3) {
