@@ -441,6 +441,17 @@ bool Widget_Camera::UI(Undo& undo, Camera& user_cam) {
         update_cam = true;
         do_undo = true;
     }
+    ImGui::SameLine();
+    if(ImGui::Button("Load Lens")) {
+        char* path = nullptr;
+        NFD_OpenDialog("dat", nullptr, &path);
+        
+        std::string f_path = path;
+        if(path){
+            user_cam.load_lens(f_path);
+            do_undo = true;
+        } 
+    } 
 
     update_cam |= ImGui::SliderFloat("Aspect Ratio", &cam_ar, 0.1f, 10.0f, "%.2f");
 
@@ -465,7 +476,7 @@ bool Widget_Camera::UI(Undo& undo, Camera& user_cam) {
     }
     if(ImGui::IsItemDeactivated() && old_ap != cam_ap) do_undo = true;
 
-    update_cam |= ImGui::SliderFloat("Focal Distance", &cam_dist, 0.2f, 10.0f, "%.2f");
+    update_cam |= ImGui::SliderFloat("Focal Distance", &cam_dist, 0.2f, 50.0f, "%.2f");
     if(ImGui::IsItemActivated()) {
         old = render_cam;
         old_dist = cam_dist;

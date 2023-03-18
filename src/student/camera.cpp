@@ -1,4 +1,8 @@
 
+#include <assimp/Importer.hpp>
+#include <fstream>
+#include <sstream>
+#include <iostream>
 #include "../util/camera.h"
 #include "../util/rand.h"
 #include "../rays/samplers.h"
@@ -51,4 +55,38 @@ Ray Camera::generate_ray(Vec2 screen_coord) const {
 
     r.transform(iview);
     return r;
+}
+
+// Real Camera
+void Camera::load_lens(std::string lens_path) {
+    std::cout << lens_path << std::endl;
+    std::ifstream input_file(lens_path);
+    std::string line;
+
+    if (!input_file.is_open()) {
+        // Error opening file
+        return;
+    }
+
+    if (!lens_elements.empty())
+        lens_elements.clear();
+
+    while (std::getline(input_file, line)) {
+        if (line[0] == '#') {
+            continue; // Skip lines that start with #
+        }
+        std::istringstream iss(line);
+        Lens_Element element;
+        if (!(iss >> element.curvature >> element.thickness >> element.eta >> element.aperture)) {
+            std::cout << "Error: could not parse line \"" << line << "\"" << std::endl;
+            break;
+        }
+        element.curvature *= 0.001;
+        element.thickness *= 0.001;
+        element.eta *= 0.001;
+        element.aperture = element.aperture * 0.001 / 2.0;
+        lens_elements.push_back(element);
+    }
+
+    input_file.close();
 }

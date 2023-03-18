@@ -57,6 +57,9 @@ public:
     float get_h_fov() const;
     float get_near() const;
 
+    // Real Camera
+    void load_lens(std::string lens_path);
+
 private:
     void update_pos();
 
@@ -71,8 +74,19 @@ private:
     float radius, near_plane;
     /// For mouse control
     float orbit_sens, move_sens, radius_sens;
+
     /// Lens parameters
     float aperture, focal_dist;
+    float max_aperture;
+    struct Lens_Element {
+        float curvature;
+        float thickness;
+        float eta;
+        float aperture;
+    };
+
+    std::vector<Lens_Element> lens_elements;
+    std::vector<Vec2> exit_pupil;
 
     /// Cached view matrices
     Mat4 view, iview;
