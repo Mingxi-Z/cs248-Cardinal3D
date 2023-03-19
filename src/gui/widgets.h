@@ -68,7 +68,8 @@ private:
 
     Camera old = render_cam;
     float old_ar, old_fov, old_ap, old_dist;
-
+    std::string fileName;
+    std::string filePath;
     void update_cameras(Camera& user_cam);
     void generate_cage();
 };

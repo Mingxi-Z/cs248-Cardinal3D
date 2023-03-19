@@ -442,16 +442,21 @@ bool Widget_Camera::UI(Undo& undo, Camera& user_cam) {
         do_undo = true;
     }
     ImGui::SameLine();
+
     if(ImGui::Button("Load Lens")) {
         char* path = nullptr;
         NFD_OpenDialog("dat", nullptr, &path);
         
         if(path){
-            std::string f_path = path;
-            user_cam.load_lens(f_path);
+            filePath = path;
+            render_cam.load_lens(filePath);
             do_undo = true;
+            update_cam = true;
+            size_t lastSlashPos = filePath.find_last_of("/\\");
+            fileName = filePath.substr(lastSlashPos + 1);
         } 
     } 
+    ImGui::Text("%s", fileName.c_str());
 
     update_cam |= ImGui::SliderFloat("Aspect Ratio", &cam_ar, 0.1f, 10.0f, "%.2f");
 
@@ -499,6 +504,7 @@ void Widget_Camera::update_cameras(Camera& user_cam) {
     render_cam.set_fov(cam_fov);
     render_cam.set_ap(cam_ap);
     render_cam.set_dist(cam_dist);
+    render_cam.load_lens(filePath);
     if(moving_camera) {
         user_cam.set_ar(cam_ar);
         user_cam.set_fov(cam_fov);
