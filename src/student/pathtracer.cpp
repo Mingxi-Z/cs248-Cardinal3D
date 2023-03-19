@@ -41,9 +41,7 @@ Spectrum Pathtracer::trace_pixel(size_t x, size_t y) {
 
     Ray out = camera.generate_ray(xy / wh);
     //Ray out = camera.generate_ray(Vec2(1, 1));
-    if(RNG::coin_flip(0.0005f)) 
-        log_ray(out, 10.0f);
-
+    
     return trace_ray(out);
 }
 
@@ -152,7 +150,7 @@ Spectrum Pathtracer::trace_ray(const Ray& ray) {
     // (1) Ray objects have a depth field; if it reaches max_depth, you should
     // terminate the path.
     if(ray.depth >= max_depth) {
-        return {};
+        return Spectrum();
     }
     // (2) Randomly select a new ray direction (it may be reflection or transmittance
     // ray depending on surface type) using bsdf.sample()
@@ -169,7 +167,8 @@ Spectrum Pathtracer::trace_ray(const Ray& ray) {
     // (4) Create new scene-space ray and cast it to get incoming light. As with shadow rays,
     // you should modify time_bounds so that the ray does not intersect at time = 0. Remember to
     // set the new throughput and depth values.
-    new_ray.dist_bounds.x = EPS_F;
+    //new_ray.dist_bounds.x = EPS_F;
+    new_ray.point = new_ray.point + new_ray.dir * EPS_F;
     new_ray.depth = ray.depth + !bsdf.is_discrete();
 
     float q = 1.0f - std::min(1.0f, new_ray.throughput.luma());
@@ -180,9 +179,9 @@ Spectrum Pathtracer::trace_ray(const Ray& ray) {
     }
 
     new_ray.throughput = new_ray.throughput / (1 - q);
-
+    if(RNG::coin_flip(0.0005f)) 
+        log_ray(new_ray, 10.0f);
     Spectrum radiance_indirect = trace_ray(new_ray);
-    
     // (5) Add contribution due to incoming light with proper weighting. Remember to add in
     // the BSDF sample emissive term.
     return ((ray.depth == 0) ? ray.throughput * new_sample.emissive : Spectrum()) +

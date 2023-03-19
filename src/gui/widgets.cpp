@@ -446,8 +446,8 @@ bool Widget_Camera::UI(Undo& undo, Camera& user_cam) {
         char* path = nullptr;
         NFD_OpenDialog("dat", nullptr, &path);
         
-        std::string f_path = path;
         if(path){
+            std::string f_path = path;
             user_cam.load_lens(f_path);
             do_undo = true;
         } 

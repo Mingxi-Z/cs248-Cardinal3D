@@ -28,7 +28,30 @@ Vec3 refract(Vec3 out_dir, float index_of_refraction, bool& was_internal) {
     // you want to compute the 'input' direction that would cause this output,
     // and to do so you can simply find the direction that out_dir would refract
     // _to_, as refraction is symmetric.
-    return Vec3();
+    Vec3 in_dir;
+    Vec3 normal(0, 1, 0);
+    bool entering = out_dir.y > 0.0f;
+
+    normal = (!entering) ? -normal : normal;
+
+    float cos_theta_out = dot(normal, out_dir);
+
+    float eta = index_of_refraction;
+
+    float sin2_theta_out = std::max(0.f, 1.f - cos_theta_out * cos_theta_out);
+    float sin2_theta_in = eta * eta * sin2_theta_out;
+
+    if (sin2_theta_in >= 1) {
+        was_internal = true;
+        return in_dir;
+    }
+
+    float cos_theta_in = std::sqrt(1 - sin2_theta_in);
+
+    in_dir = eta * -out_dir + (eta * cos_theta_out - cos_theta_in) * normal;
+    //was_internal = false;
+
+    return in_dir;
 }
 
 BSDF_Sample BSDF_Lambertian::sample(Vec3 out_dir) const {
@@ -72,18 +95,59 @@ Spectrum BSDF_Mirror::evaluate(Vec3 out_dir, Vec3 in_dir) const {
 BSDF_Sample BSDF_Glass::sample(Vec3 out_dir) const {
 
     // TODO (PathTracer): Task 6
-
-    // Implement glass BSDF.
-    // (1) Compute Fresnel coefficient. Tip: use Schlick's approximation.
-    // (2) Reflect or refract probabilistically based on Fresnel coefficient. Tip: RNG::coin_flip
-    // (3) Compute attenuation based on reflectance or transmittance
-
-    // Be wary of your eta1/eta2 ratio - are you entering or leaving the surface?
-
     BSDF_Sample ret;
     ret.attenuation = Spectrum(); // What is the ratio of reflected/incoming light?
     ret.direction = Vec3();       // What direction should we sample incoming light from?
     ret.pdf = 0.0f; // Was was the PDF of the sampled direction? (In this case, the PMF)
+
+    // Implement glass BSDF.
+    // (1) Compute Fresnel coefficient. Tip: use Schlick's approximation.
+    auto schlick_fresnel_approx = [](float cos_theta_i, float n1, float n2) {
+        if (cos_theta_i > 0.0)
+            std::swap(n1, n2);
+
+        float r0 = (n1 - n2) / (n1 + n2);
+        r0 = r0 * r0;
+        float x = 1.0f - cos_theta_i;
+        return r0 + (1.0f - r0) * x * x * x * x * x;
+    };
+
+    Vec3 normal(0, 1, 0);
+    float cos_theta_i = dot(out_dir, normal);
+    float eta_i = 1.0f;
+    float eta_t = index_of_refraction;
+    if (cos_theta_i < 0) {
+        // Ray is entering the medium
+        cos_theta_i = -cos_theta_i;
+        std::swap(eta_i, eta_t);
+        normal = -normal;
+    }
+
+    float schlick_fresnel = schlick_fresnel_approx(cos_theta_i, index_of_refraction, 1.0f);
+    
+    // (2) Reflect or refract probabilistically based on Fresnel coefficient. Tip: RNG::coin_flip
+    if (RNG::coin_flip(schlick_fresnel)) {
+        // Reflect
+        ret.direction = reflect(out_dir);
+        ret.attenuation = reflectance * schlick_fresnel;
+        ret.pdf = schlick_fresnel;
+    } else {
+        // Refract
+        bool was_internal = false;
+        ret.direction = refract(out_dir, index_of_refraction, was_internal);
+        ret.attenuation = transmittance;
+        if (was_internal) {
+            // Total internal reflection occurred, reflect instead
+            ret.direction = reflect(out_dir);
+            ret.attenuation = Spectrum(1.0f, 1.0f, 1.0f);
+            ret.pdf = schlick_fresnel;
+        } else {
+            ret.pdf = 1.0f - schlick_fresnel;
+        }   
+        
+    }
+    // (3) Compute attenuation based on reflectance or transmittance
+    // Be wary of your eta1/eta2 ratio - are you entering or leaving the surface?
     return ret;
 }
 
@@ -114,10 +178,22 @@ BSDF_Sample BSDF_Refract::sample(Vec3 out_dir) const {
     // Be wary of your eta1/eta2 ratio - are you entering or leaving the surface?
 
     BSDF_Sample ret;
-    ret.attenuation = Spectrum(); // What is the ratio of reflected/incoming light?
-    ret.direction = Vec3();       // What direction should we sample incoming light from?
-    ret.pdf = 0.0f; // Was was the PDF of the sampled direction? (In this case, the PMF)
-    return ret;
+    bool was_internal = false;
+
+    // Figure out which $\eta$ is incident and which is transmitted
+    bool entering = out_dir.y > 0.0f;
+    float eta_i = entering ? 1.0f : index_of_refraction;
+    float eta_t = entering ? index_of_refraction : 1.0f;
+
+    ret.direction = refract(out_dir, eta_i / eta_t, was_internal); 
+    ret.attenuation = transmittance;
+    // Compute ray direction for specular transmission
+    if (was_internal){
+        ret.attenuation = Spectrum(1.0f, 1.0f, 1.0f);
+        ret.direction = reflect(out_dir);
+    }
+    ret.attenuation = ret.attenuation / (ret.direction.y);
+    return ret;;
 }
 
 Spectrum BSDF_Refract::evaluate(Vec3 out_dir, Vec3 in_dir) const {

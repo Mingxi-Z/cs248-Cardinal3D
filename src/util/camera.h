@@ -85,8 +85,15 @@ private:
         float aperture;
     };
 
+    float lens_rear_z() const;
+    float lens_front_z() const;
+    float rear_radius() const;
+
     std::vector<Lens_Element> lens_elements;
     std::vector<Vec2> exit_pupil;
+
+    /// Simulate the ray through lens for the given camera way
+    Ray trace_lens_ray (const Ray &camera_ray, bool &success) const;
 
     /// Cached view matrices
     Mat4 view, iview;

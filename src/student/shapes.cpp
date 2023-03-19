@@ -54,10 +54,11 @@ Trace Sphere::hit(const Ray& ray) const {
             return ret;
         }
     }
-    ray.dist_bounds.y = t;
+    //ray.dist_bounds.y = t;
 
     ret.hit = true;
     ret.position = ray.at(t);
+    ret.distance = t;
     ret.normal = (ret.position - bbox().center()).unit();
     return ret;
 }
