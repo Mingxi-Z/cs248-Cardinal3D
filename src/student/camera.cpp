@@ -10,6 +10,9 @@
 #include "debug.h"
 #include "../rays/bsdf.h"
 
+#define LENS_DIST 0.018f
+#define SENSOR_SIZE 0.135f
+
 PT::Trace spherical_element_hit (float radius, const Ray &ray);
 Vec3 refract (Vec3 &out_dir, Vec3 &normal, float eta, bool &was_internal);
 
@@ -31,23 +34,39 @@ Ray Camera::generate_ray(Vec2 screen_coord) const {
     float half_height = tanf(half_fov);
     float half_width = half_height * get_ar();
 
+    // Calculate the film plane for 135mm camera
+    float aspect = half_height / half_width;
+    float diagonal = SENSOR_SIZE;
+    float x = std::sqrt(diagonal * diagonal / (1 + aspect * aspect));
+    float y = aspect * x;
+    
+    half_height = y / 2;
+    half_width = x / 2;
+
     float sensor_x = (-half_width) * (1 - screen_coord.x) + half_width * screen_coord.x;
     float sensor_y = (-half_height) * (1 - screen_coord.y) + half_height * screen_coord.y;
 
 
-    Vec3 sensor_pos(sensor_x, sensor_y, -1.0f);
+    Vec3 sensor_pos(-sensor_x, -sensor_y, 0.0f);
     // Tip: compute the ray direction in view space and use
     // the camera space to world space transform (iview) to transform the ray back into world space.
     Ray r(Vec3(0, 0, 0), sensor_pos.unit());
 
-    // if (aperture > 0) {
+    if (lens_elements.empty()){
+        r.transform(iview);
+        return r;
+    }
+
+    Lens_Element last = lens_elements[lens_elements.size() - 1];
+
+    // if (last.aperture > 0) {
     //     // Sample point on lens
     //     auto sampleDisk = [](float radius) -> Vec2 {
     //         float angle = RNG::unit() * 2 * PI_F;
     //         float r = radius * RNG::unit();
     //         return Vec2(r * cosf(angle), r * sinf(angle));
     //     };
-    //     Vec2 pLens = sampleDisk(aperture);
+    //     Vec2 pLens = sampleDisk(last.aperture);
 
     //     // Compute point on plane of focus
     //     float ft = focal_dist / r.dir.z;
@@ -57,25 +76,28 @@ Ray Camera::generate_ray(Vec2 screen_coord) const {
     //     r.point = Vec3(pLens.x, pLens.y, 0.0f);
     //     r.dir = (r.point - pFocus);
     // }
-    if (lens_elements.empty()){
-        r.transform(iview);
-        return r;
-    }
 
-    Lens_Element last = lens_elements[lens_elements.size() - 1];
+    auto sampleDisk = [](float radius) -> Vec2 {
+        float angle = RNG::unit() * 2 * PI_F;
+        float r = radius * RNG::unit();
+        return Vec2(r * cosf(angle), r * sinf(angle));
+    };
+    Vec2 pLens2 = sampleDisk(last.aperture);
 
-    Vec3 dest((RNG::unit()-0.5) * last.aperture * 2, (RNG::unit()-0.5) * last.aperture * 2, -1.0f);
+    Vec3 dest(pLens2.x, pLens2.y, -last.thickness - LENS_DIST);
+    //std::cout <<  -last.thickness << std::endl;
     Vec3 orig(-sensor_x, -sensor_y, 0.0f);
+    // std::cout << -sensor_x << "," << -sensor_y << "," << 0.0f << std::endl;
     r = Ray(orig, (dest - orig).unit()); 
-        
-    bool success = true;
+    
+    bool success = false;
     Ray camera = trace_lens_ray(r, success);
     //camera.dir = -camera.dir;
     camera.transform(iview);
     // camera.dir = -camera.dir;
     // TODO:: check why not success
-    // if (!success)
-    //   camera.dist_bounds.y = EPS_F;
+    if (!success)
+      camera.dist_bounds.y = EPS_F;
     return camera;
 }
 
@@ -103,10 +125,10 @@ void Camera::load_lens(std::string lens_path) {
             std::cout << "Error: could not parse line \"" << line << "\"" << std::endl;
             break;
         }
-        element.curvature *= 0.001;
-        element.thickness *= 0.001;
-        element.eta *= 0.001;
-        element.aperture = element.aperture * 0.001 / 2.0;
+        element.curvature *= 0.001f;
+        element.thickness *= 0.001f;
+        element.eta *= 0.001f;
+        element.aperture = element.aperture * 0.001f / 2.0f;
         lens_elements.push_back(element);
     }
 
@@ -132,7 +154,7 @@ float Camera::rear_radius() const {
 }
 
 Ray Camera::trace_lens_ray (const Ray &camera_ray, bool &success) const {
-    float element_z = 0;
+    float element_z = 0.0f;
     Ray lens_ray = camera_ray;
     PT::Trace result;
     for (size_t i = lens_elements.size() - 1; i >= 0; --i) {         
@@ -141,7 +163,7 @@ Ray Camera::trace_lens_ray (const Ray &camera_ray, bool &success) const {
         
         float t = 0.0f;
         // Compute intersection of ray with lens element
-        if(elem.curvature == 0.0) {
+        if(elem.curvature == 0.0f) {
             float a = 1.0f / camera_ray.dir.z;
             float b = -camera_ray.point.z / camera_ray.dir.z;
             t = a * element_z + b;
@@ -171,19 +193,21 @@ Ray Camera::trace_lens_ray (const Ray &camera_ray, bool &success) const {
         }
         lens_ray.point = hit_location;
         // Update ray path for element interface interaction
-        if (elem.curvature == 0.0) {
+        if (elem.curvature == 0.0f) {
             success = true;
             return lens_ray;
         }
             
         Vec3 w;
         float etaI = elem.eta;
-        float etaT = (i > 0 && lens_elements[i - 1].eta != 0) ?
-           lens_elements[i - 1].eta : 1;
+        float etaT = (i > 0 && lens_elements[i - 1].eta != 0.0f) ?
+           lens_elements[i - 1].eta : 1.0f;
         bool was_internal = false;
 
         float eta = etaI / etaT;
         Vec3 temp = -lens_ray.dir;
+        if (dot(temp, result.normal) < 0.0f)
+            result.normal = -result.normal;
         Vec3 ref_dir = refract(temp, result.normal, eta, was_internal);
         if (was_internal){
             success = false;
