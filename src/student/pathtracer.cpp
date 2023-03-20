@@ -25,6 +25,7 @@ Spectrum Pathtracer::trace_pixel(size_t x, size_t y) {
     Samplers::Rect::Uniform pixel(Vec2(1, 1));
     float pdf;
     if(n_samples > 1) {
+        camera.generate_exit_pupil(n_samples);
         Vec2 rand_xy = pixel.sample(pdf);
         xy += rand_xy;
     }
@@ -41,14 +42,14 @@ Spectrum Pathtracer::trace_pixel(size_t x, size_t y) {
 
     Ray out = camera.generate_ray(xy / wh);
     //Ray out = camera.generate_ray(Vec2(1, 1));
-    
+        if(RNG::coin_flip(0.0005f)) 
+        log_ray(out, 10.0f);
     return trace_ray(out);
 }
 
 Spectrum Pathtracer::trace_ray(const Ray& ray) {
 
     // Trace ray into scene. If nothing is hit, sample the environment
-    
     Trace hit = scene.hit(ray);
     if(!hit.hit) {
         if(env_light.has_value()) {
@@ -179,9 +180,10 @@ Spectrum Pathtracer::trace_ray(const Ray& ray) {
     }
 
     new_ray.throughput = new_ray.throughput / (1 - q);
-    if(RNG::coin_flip(0.0005f)) 
-        log_ray(new_ray, 10.0f);
+        //         if(RNG::coin_flip(0.0005f)) 
+        // log_ray(new_ray, 10.0f);
     Spectrum radiance_indirect = trace_ray(new_ray);
+
     // (5) Add contribution due to incoming light with proper weighting. Remember to add in
     // the BSDF sample emissive term.
     return ((ray.depth == 0) ? ray.throughput * new_sample.emissive : Spectrum()) +

@@ -57,12 +57,14 @@ public:
     float get_h_fov() const;
     float get_near() const;
 
+    void generate_exit_pupil(int n_samples);
     // Real Camera
     void load_lens(std::string lens_path);
 
 private:
     void update_pos();
-
+    Thread_Pool thread_pool;
+    
     /// Camera parameters
     Vec3 position, looking_at;
     /// FOV is in degrees
@@ -90,11 +92,17 @@ private:
     float rear_radius() const;
 
     std::vector<Lens_Element> lens_elements;
-    std::vector<Vec2> exit_pupil;
+    std::vector<BBox> exit_pupil;
 
-    /// Simulate the ray through lens for the given camera way
-    Ray trace_lens_ray (const Ray &camera_ray, bool &success) const;
+    /// Simulate the ray from film through lens for the given camera way
+    Ray trace_lens_ray (const Ray &camera_ray, bool *success) const;
+    /// Simulate the ray from scene through lens for the given camera way
+    Ray trace_lens_ray_reverse (const Ray &camera_ray, bool *success) const;
 
+    void thick_lens_approx (Vec2 &pz, Vec2 &fz) const;
+    float thick_lens_focus (void);
+
+    BBox exit_pupil_bound (Vec2 x_range);
     /// Cached view matrices
     Mat4 view, iview;
 };

@@ -246,7 +246,8 @@ Trace BVH<Primitive>::hit(const Ray& ray) const {
     };
 
     Vec2 time;
-
+    if (nodes.empty())
+        return ret;
     bool hit = nodes[0].bbox.hit(ray, time);
     if(!hit) return ret;
 

@@ -449,6 +449,7 @@ bool Widget_Camera::UI(Undo& undo, Camera& user_cam) {
         
         if(path){
             filePath = path;
+            user_cam.load_lens(filePath);
             render_cam.load_lens(filePath);
             do_undo = true;
             update_cam = true;

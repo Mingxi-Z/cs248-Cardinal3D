@@ -125,6 +125,9 @@ float Camera::get_ap() const {
 
 void Camera::set_dist(float dist) {
     focal_dist = dist;
+    if (lens_elements.empty())
+        return;
+    lens_elements.at(lens_elements.size() - 1).thickness = thick_lens_focus();
 }
 
 float Camera::get_dist() const {
