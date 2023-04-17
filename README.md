@@ -42,7 +42,7 @@ BVH相交 - BVH intersection
 ## 自选期末项目 Self-Select Final Project
 ### 模拟真实相机效果 Simulate Realistic Camera Effects
 
-### 实现的功能 Functionalities Implemented:
+### 实现的功能 Functionalities:
 ```
 从虚拟固定尺寸传感器生成相机射线 Camera Rays from virtual fixed size sensor 
 相机射线与镜头相交 Camera Ray-Lenses intersection
