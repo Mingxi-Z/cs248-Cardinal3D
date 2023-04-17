@@ -33,9 +33,19 @@ Vec3 Sphere::Uniform::sample(float& pdf) const {
     // TODO (PathTracer): Task 7
     // Generate a uniformly random point on the unit sphere (or equivalently, direction)
     // Tip: start with Hemisphere::Uniform
+    Hemisphere::Uniform sampler;
 
-    pdf = 1.0f; // what was the PDF at the chosen direction?
-    return Vec3();
+    Vec3 dir = sampler.sample(pdf);
+
+    // Randomly flip the direction
+    if (RNG::coin_flip()) {
+        dir = -dir;
+    }
+
+    // Set the PDF to be equal for all directions
+    pdf *= 0.5f / PI_F;
+
+    return dir;
 }
 
 Sphere::Image::Image(const HDR_Image& image) {
@@ -49,6 +59,33 @@ Sphere::Image::Image(const HDR_Image& image) {
     const auto [_w, _h] = image.dimension();
     w = _w;
     h = _h;
+    float total = 0.0f;
+
+    // Compute the pdf and cdf arrays for the image
+    pdf.reserve(w * h);
+    cdf.reserve(w * h);
+    for (int j = 0; j < (int) h; ++j) {
+        for (int i = 0; i < (int) w; ++i) {
+            Spectrum color = image.at(i, j);
+            float luminance = color.luma();
+            pdf.push_back(luminance);
+            total += luminance;
+            if (i == 0 && j == 0) {
+                cdf.push_back(luminance);
+            } else {
+                cdf.push_back(cdf.back() + luminance);
+            }
+        }
+    }
+
+    // Normalize pdf and cdf arrays
+    const float inv_total = 1.0f / total;
+    for (auto& p : pdf) {
+        p *= inv_total;
+    }
+    for (auto& p : cdf) {
+        p *= inv_total;
+    }
 }
 
 Vec3 Sphere::Image::sample(float& out_pdf) const {
@@ -58,7 +95,23 @@ Vec3 Sphere::Image::sample(float& out_pdf) const {
     // Tip: std::upper_bound can easily binary search your CDF
 
     out_pdf = 1.0f; // what was the PDF (again, PMF here) of your chosen sample?
-    return Vec3();
+
+    float r = RNG::unit();
+    auto it = std::upper_bound(cdf.begin(), cdf.end(), r);
+    int index = it - cdf.begin();
+
+    int i = index % w;
+    int j = index / w;
+    float u = (i + 0.5f) / w;
+    float v = (j + 0.5f) / h;
+    float phi = 2 * PI_F * u;
+    float cos_theta = 2 * v - 1;
+    float sin_theta = sqrtf(1.0f - cos_theta * cos_theta);
+    Vec3 dir(sin_theta * cos(phi), 2 * v - 1, sin_theta * sin(phi));
+
+    out_pdf = pdf[index] * w * h / (2 * PI_F * PI_F * sin_theta);
+
+    return dir;
 }
 
 Vec3 Point::sample(float& pmf) const {
