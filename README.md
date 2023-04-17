@@ -1,5 +1,5 @@
 # Cardinal3D
-2023年1月9日至2023年3月17日在斯坦福大学CS248A课程项目。
+2023年1月9日至2023年3月17日 斯坦福大学 CS248A 课程项目。
 
 This was a course project of CS248a taught at Stanford University during Jan. 9 2023 to Mar. 17 2023.
 
