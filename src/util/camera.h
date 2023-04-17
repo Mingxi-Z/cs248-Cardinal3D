@@ -2,11 +2,10 @@
 #pragma once
 
 #include "../lib/mathlib.h"
-
+#include "../util/thread_pool.h"
 class Camera {
 public:
     Camera(Vec2 dim);
-
     /**
             Returns a world-space ray from the camera that corresponds to a
             ray exiting the camera that deposits light at the sensor plane
@@ -63,8 +62,6 @@ public:
 
 private:
     void update_pos();
-    Thread_Pool thread_pool;
-    
     /// Camera parameters
     Vec3 position, looking_at;
     /// FOV is in degrees
@@ -92,7 +89,6 @@ private:
     float rear_radius() const;
 
     std::vector<Lens_Element> lens_elements;
-    std::vector<BBox> exit_pupil;
 
     /// Simulate the ray from film through lens for the given camera way
     Ray trace_lens_ray (const Ray &camera_ray, bool *success) const;
@@ -102,7 +98,6 @@ private:
     void thick_lens_approx (Vec2 &pz, Vec2 &fz) const;
     float thick_lens_focus (void);
 
-    BBox exit_pupil_bound (Vec2 x_range);
     /// Cached view matrices
     Mat4 view, iview;
 };

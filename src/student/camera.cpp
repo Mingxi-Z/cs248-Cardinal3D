@@ -13,8 +13,8 @@
 #include "../util/thread_pool.h"
 
 #define LENS_DIST 0.018f
-#define SENSOR_SIZE 0.135f
-#define EXIT_PUPIL_SAMPLE 1024
+#define SENSOR_SIZE 0.135f / 3
+#define EXIT_PUPIL_SAMPLE 100
 
 PT::Trace spherical_element_hit (float radius, const Ray &ray);
 Vec3 refract (Vec3 &out_dir, Vec3 &normal, float eta, bool &was_internal);
@@ -63,45 +63,28 @@ Ray Camera::generate_ray(Vec2 screen_coord) const {
     
     Lens_Element last = lens_elements.at(lens_elements.size() - 1);
 
-    // if (last.aperture > 0) {
-    //     // Sample point on lens
-    //     auto sampleDisk = [](float radius) -> Vec2 {
-    //         float angle = RNG::unit() * 2 * PI_F;
-    //         float r = radius * RNG::unit();
-    //         return Vec2(r * cosf(angle), r * sinf(angle));
-    //     };
-    //     Vec2 pLens = sampleDisk(last.aperture);
-
-    //     // Compute point on plane of focus
-    //     float ft = focal_dist / r.dir.z;
-    //     Vec3 pFocus = r.at(ft);
-
-    //     // Update ray for effect of lens
-    //     r.point = Vec3(pLens.x, pLens.y, 0.0f);
-    //     r.dir = (r.point - pFocus);
-    // }
-
     auto sampleDisk = [](float radius) -> Vec2 {
         float angle = RNG::unit() * 2 * PI_F;
-        float r = radius * RNG::unit();
+        float r = radius * sqrt(RNG::unit());
         return Vec2(r * cosf(angle), r * sinf(angle));
     };
     Vec2 pLens2 = sampleDisk(last.aperture);
-    //last.thickness = -focal_dist;
+
     Vec3 dest(pLens2.x, pLens2.y, -last.thickness);
-    //std::cout <<  -last.thickness << std::endl;
+
     Vec3 orig(-sensor_x, -sensor_y, 0.0f);
-    // std::cout << -sensor_x << "," << -sensor_y << "," << 0.0f << std::endl;
+    
     r = Ray(orig, (dest - orig).unit()); 
     
     bool success = false;
     Ray camera = trace_lens_ray(r, &success);
+    //Ray camera = trace_lens_ray(r, &success);
     //camera.dir = -camera.dir;
     camera.transform(iview);
     // camera.dir = -camera.dir;
-    // TODO:: check why not success
     if (!success)
-      camera.dist_bounds.y = EPS_F;
+        camera.dist_bounds.y = EPS_F;
+
     return camera;
 }
 
@@ -156,74 +139,73 @@ float Camera::lens_front_z() const {
 float Camera::rear_radius() const {
     return lens_elements.back().aperture;
 }
-//TODO: why all the ray fail at aperture
+
 Ray Camera::trace_lens_ray (const Ray &camera_ray, bool *success) const {
     float element_z = 0.0f;
     Ray lens_ray = camera_ray;
     PT::Trace result;
     Lens_Element elem;
-    for (int i = (lens_elements.size() - 1); i >= 0; i--) {         
+
+    for (int i = lens_elements.size() - 1; i >= 0; i--) {         
         elem = lens_elements.at(i);
         element_z -= elem.thickness;
         
         float t = 0.0f;
         // Compute intersection of ray with lens element
         if(elem.curvature == 0.0f) {
+            // Case when lens element is flat (aperture stop)
             float a = 1.0f / lens_ray.dir.z;
             float b = -lens_ray.point.z / lens_ray.dir.z;
             t = a * element_z + b;
         } else {
+            // Case when lens element is spherical
             float radius = elem.curvature;
             float z_center = element_z + elem.curvature;
-            // TODO:: Check math here
-            // Since the Sphere.hit assume sphere is at the origin, 
-            // needs to transform the camera ray by z_center
-            // Mat4 ray_to_sphere = Mat4::translate(Vec3(0.0f, 0.0f, -z_center));
-            // lens_ray.transform(ray_to_sphere);
-            lens_ray.point = lens_ray.point - Vec3(0.0f, 0.0f, z_center);
+            
+            // Shift ray origin to center of sphere for intersection test
+            lens_ray.point.z -= z_center;
             result = spherical_element_hit (radius, lens_ray);
             if (!result.hit) {
                 *success = false;
                 return lens_ray;
             }
-            lens_ray.point = lens_ray.point + Vec3(0.0f, 0.0f, z_center);
+            lens_ray.point.z += z_center;
             t = result.distance;
         }
         // Test intersection point against element aperture
         Vec3 hit_location = lens_ray.at(t);
         float r2 = hit_location.x * hit_location.x + hit_location.y * hit_location.y;
-        if (r2 > elem.aperture * elem.aperture) {
+        float ap = (elem.curvature == 0.0f) ? aperture : elem.aperture;
+        if (r2 > ap * ap) {
             *success = false;
-            //warn("fail aperture %f, aperture\n", r2);
-            // std::cout << "fail aperture : " << r2 << "," << elem->aperture * elem->aperture << std::endl;
             return lens_ray;
         }
         lens_ray.point = hit_location;
         // Update ray path for element interface interaction
-        if (elem.curvature == 0.0f) {
-            continue;
-        }
-            
-        Vec3 w;
-        float etaI = elem.eta;
-        float etaT = (i > 0 && lens_elements[i - 1].eta != 0.0f) ?
-           lens_elements[i - 1].eta : 1.0f;
-        bool was_internal = false;
+        if (elem.curvature != 0.0f) {
+            // Case when lens element is spherical
+            Vec3 w;
+            float etaI = elem.eta;
+            float etaT = (i > 0 && lens_elements[i - 1].eta != 0.0f) ?
+                        lens_elements[i - 1].eta : 1.0f;
+            bool was_internal = false;
 
-        float eta = etaI / etaT;
-        Vec3 temp = -lens_ray.dir;
-        if (dot(temp, result.normal) < 0.0f)
-            result.normal = -result.normal;
-        Vec3 ref_dir = refract(temp, result.normal, eta, was_internal);
-        if (was_internal){
-            //warn("was internal\n");
-            *success = false;
-            return lens_ray;
+            float eta = etaI / etaT;
+            Vec3 temp = -lens_ray.dir;
+
+            // Flip surface normal if ray is coming from inside lens element   
+            if (dot(temp, result.normal) < 0.0f)
+                result.normal = -result.normal;
+            // Compute refracted ray direction
+            Vec3 ref_dir = refract(temp, result.normal, eta, was_internal);
+            if (was_internal){
+                *success = false;
+                return lens_ray;
+            }
+            lens_ray.dir = ref_dir;
         }
-        lens_ray.dir = ref_dir;
     }
     *success = true;
-    //warn("trace success\n");
     return lens_ray;
 }
 
@@ -232,6 +214,7 @@ Ray Camera::trace_lens_ray_reverse (const Ray &camera_ray, bool *success) const 
     Ray lens_ray = camera_ray;
     PT::Trace result;
     Lens_Element elem;
+
     for (int i = 0; i < (int) lens_elements.size(); i++) {         
         elem = lens_elements.at(i);
         float t = 0.0f;
@@ -243,20 +226,15 @@ Ray Camera::trace_lens_ray_reverse (const Ray &camera_ray, bool *success) const 
         } else {
             float radius = elem.curvature;
             float z_center = element_z + elem.curvature;
-            // TODO:: Check math here
-            // Since the Sphere.hit assume sphere is at the origin, 
-            // needs to transform the camera ray by z_center
-            //Mat4 ray_to_sphere = Mat4::translate(Vec3(0.0f, 0.0f, -z_center));
-            lens_ray.point = lens_ray.point - Vec3(0.0f, 0.0f, z_center);
+            
+            lens_ray.point.z -= z_center;
             result = spherical_element_hit (radius, lens_ray);
             if (!result.hit) {
-                warn("not hit\n");
                 *success = false;
                 return lens_ray;
             }
-            // Mat4 sphere_to_ray = Mat4::translate(Vec3(0.0f, 0.0f, z_center));
-            // lens_ray.transform(sphere_to_ray);
-            lens_ray.point = lens_ray.point + Vec3(0.0f, 0.0f, z_center);
+            
+            lens_ray.point.z += z_center;
             t = result.distance;
         }
         // Test intersection point against element aperture
@@ -264,7 +242,6 @@ Ray Camera::trace_lens_ray_reverse (const Ray &camera_ray, bool *success) const 
         float r2 = hit_location.x * hit_location.x + hit_location.y * hit_location.y;
         if (r2 > elem.aperture * elem.aperture) {
             *success = false;
-            warn("fail aperture \n");
             return lens_ray;
         }
         lens_ray.point = hit_location;
@@ -287,14 +264,12 @@ Ray Camera::trace_lens_ray_reverse (const Ray &camera_ray, bool *success) const 
         Vec3 ref_dir = refract(temp, result.normal, eta, was_internal);
         if (was_internal){
             *success = false;
-            warn("was internal \n");
             return lens_ray;
         }
         lens_ray.dir = ref_dir;
         element_z += elem.thickness;
     }
     *success = true;
-    warn("success \n");
     return lens_ray;
 }
 
@@ -302,16 +277,19 @@ void Camera::thick_lens_approx (Vec2 &pz, Vec2 &fz) const {
     float x = .001f * SENSOR_SIZE;
     Ray in(Vec3(x, 0.0f, -lens_front_z() - 1.0f), Vec3(0.0f, 0.0f, 1.0f));
     bool success = false;
-    Ray out;
-    out = trace_lens_ray_reverse(in, &success);
-    // if (!success)
-    //     warn("trace reverse fail\n");
+    Ray out = trace_lens_ray_reverse(in, &success);
+
+    if (!success)
+        return;
+
     get_cardinal_point(in, out, pz[0], fz[0]);
 
     out = Ray(Vec3(x, 0.0f, lens_rear_z() + 1.0f), Vec3(0, 0, -1));
     in = trace_lens_ray(out, &success);
-    // if (!success)
-    //     warn("trace fail\n");
+    
+    if (!success)
+        return;
+
     get_cardinal_point(out, in, pz[1], fz[1]);
 }
 
@@ -323,69 +301,7 @@ float Camera::thick_lens_focus (void) {
     float z = -focal_dist;
     float delta = 0.5f * (pz[1] - z + pz[0] -
         std::sqrt((pz[1] - z - pz[0]) * (pz[1] - z - 4 * f - pz[0])));
-
     return lens_rear_z() + delta;
-}
-
-void Camera::generate_exit_pupil(int n_samples) {
-    exit_pupil.resize(n_samples);
-    parallel_for (
-        [&](int i) {
-            float r0 = (float)i / n_samples * SENSOR_SIZE / 2;
-            float r1 = (float)(i + 1) / n_samples * SENSOR_SIZE / 2;
-            exit_pupil[i] = exit_pupil_bound(r0, r1);
-        }, n_samples);
-}
-
-BBox Camera::exit_pupil_bound(Vec2 x_range) {
-    BBox pupil_bound;
-    auto sampleDisk = [](float radius) -> Vec2 {
-        float angle = RNG::unit() * 2 * PI_F;
-        float r = radius * RNG::unit();
-        return Vec2(r * cosf(angle), r * sinf(angle));
-    };
-
-    const int n_samples = EXIT_PUPIL_SAMPLE * EXIT_PUPIL_SAMPLE;
-    int n_exit_ray = 0;
-
-    float last_aperture = lens_elements.back().aperture;
-
-    Vec3 min_point(-1.5f * last_aperture, -1.5f * last_aperture, 0.0f);
-    Vec3 max_point(1.5f * last_aperture, 1.5f * last_aperture, 0.0f);
-    BBox bound(min_point, max_point);
-    for (int i = 0; i < n_samples; ++i) {
-        float cur_x = lerp(x_range[0], x_range[1], (i + 0.5f) / n_samples);
-        Vec3 p_film(lerp(x_range[0], x_range[1], (i + 0.5f) / n_samples), 0.0f, 0.0f);
-        Vec2 rand_pos = sampleDisk(last_aperture);
-        Vec3 p_rear(rand_pos.x, rand_pos.y, -lens_rear_z());
-        
-        bool is_inside = p_rear.x >= pupil_bound.min.x && p_rear.x <= pupil_bound.max.x
-                && p_rear.y >= pupil_bound.min.y && p_rear.y <= pupil_bound.max.y;
-
-        bool expand = false;
-        if (is_inside) {
-            expand = true;
-        } else {
-            trace_lens_ray(Ray(p_film, p_rear - p_film), &expand);
-        }
-
-        if (expand){
-            pupil_bound.enclose(p_rear);
-            n_exit_ray++;
-        }
-
-    }
-    if (n_exit_ray == 0) {
-            warn("Unable to find exit pupil in x = [%f,%f] on film.",
-                                    x_range[0], x_range[1]);
-            return bound;
-        }
-
-        float bound_diag = (bound.max - bound.min).norm();
-        Vec3 expand(2 * bound_diag / sqrt(n_samples), 2 * bound_diag / sqrt(n_samples), 0);
-        pupil_bound.max = pupil_bound.max + expand;
-        pupil_bound.min = pupil_bound.min - expand;
-    return pupil_bound;
 }
 
 PT::Trace spherical_element_hit (float radius, const Ray &ray) {
@@ -422,8 +338,7 @@ Vec3 refract (Vec3 &out_dir, Vec3 &normal, float eta, bool &was_internal) {
 
     Vec3 in_dir;
     float cos_theta_out = dot(normal, out_dir);
-
-    float sin2_theta_out = std::max(0.f, 1.f - cos_theta_out * cos_theta_out);
+    float sin2_theta_out = std::clamp(1.f - cos_theta_out * cos_theta_out, 0.0f, 1.0f);
     float sin2_theta_in = eta * eta * sin2_theta_out;
 
     if (sin2_theta_in >= 1) {
@@ -440,36 +355,11 @@ Vec3 refract (Vec3 &out_dir, Vec3 &normal, float eta, bool &was_internal) {
 }
 
 void get_cardinal_point (const Ray& in, const Ray& out, float &pz, float&fz) {
-    float tf = -out.point.x / out.dir.x;
+    float a = in.point.x / out.dir.x;
+    float b = out.point.x / out.dir.x;
+
+    float tf = -b;
     fz = out.at(tf).z;
-    float tp = (in.point.x - out.point.x) / out.dir.x;
+    float tp = a - b;
     pz = out.at(tp).z;
-}
-
-void parallel_for (std::function<void(int)> func, int n_samples) {
-    // Assuming you have access to the number of threads available
-    int numThreads = std::thread::hardware_concurrency();
-
-    // Create a vector of threads
-    std::vector<std::thread> threads;
-
-    // Calculate the number of iterations per thread
-    int iterationsPerThread = n_samples / numThreads;
-
-    // Launch the threads
-    for (int i = 0; i < numThreads; ++i) {
-        int start = i * iterationsPerThread;
-        int end = (i == numThreads - 1) ? n_samples : start + iterationsPerThread;
-
-        threads.emplace_back([=]() {
-            for (int j = start; j < end; ++j) {
-                func(j);
-            }
-        });
-    }
-
-    // Join the threads
-    for (auto& thread : threads) {
-        thread.join();
-    }
 }

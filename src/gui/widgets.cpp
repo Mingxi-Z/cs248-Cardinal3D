@@ -475,14 +475,14 @@ bool Widget_Camera::UI(Undo& undo, Camera& user_cam) {
     }
     if(ImGui::IsItemDeactivated() && old_fov != cam_fov) do_undo = true;
 
-    update_cam |= ImGui::SliderFloat("Aperture", &cam_ap, 0.0f, 0.2f, "%.3f");
+    update_cam |= ImGui::SliderFloat("Aperture", &cam_ap, 0.0f, 0.25f, "%.3f");
     if(ImGui::IsItemActivated()) {
         old = render_cam;
         old_ap = cam_ap;
     }
     if(ImGui::IsItemDeactivated() && old_ap != cam_ap) do_undo = true;
 
-    update_cam |= ImGui::SliderFloat("Focal Distance", &cam_dist, 0.2f, 50.0f, "%.2f");
+    update_cam |= ImGui::SliderFloat("Focal Distance", &cam_dist, 0.3f, 30.0f, "%.2f");
     if(ImGui::IsItemActivated()) {
         old = render_cam;
         old_dist = cam_dist;
@@ -492,7 +492,7 @@ bool Widget_Camera::UI(Undo& undo, Camera& user_cam) {
     cam_ar = clamp(cam_ar, 0.1f, 10.0f);
     cam_fov = clamp(cam_fov, 10.0f, 160.0f);
     cam_ap = clamp(cam_ap, 0.0f, 1.0f);
-    cam_dist = clamp(cam_dist, 0.01f, 100.0f);
+    cam_dist = clamp(cam_dist, 0.01f, 30.0f);
 
     if(update_cam) update_cameras(user_cam);
     if(do_undo) undo.update_camera(*this, old);

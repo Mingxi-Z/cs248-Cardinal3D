@@ -25,7 +25,6 @@ Spectrum Pathtracer::trace_pixel(size_t x, size_t y) {
     Samplers::Rect::Uniform pixel(Vec2(1, 1));
     float pdf;
     if(n_samples > 1) {
-        camera.generate_exit_pupil(n_samples);
         Vec2 rand_xy = pixel.sample(pdf);
         xy += rand_xy;
     }
@@ -41,9 +40,11 @@ Spectrum Pathtracer::trace_pixel(size_t x, size_t y) {
     // specified pixel
 
     Ray out = camera.generate_ray(xy / wh);
+    if (out.dist_bounds.y == EPS_F)
+        return {};
     //Ray out = camera.generate_ray(Vec2(1, 1));
-        if(RNG::coin_flip(0.0005f)) 
-        log_ray(out, 10.0f);
+    if(RNG::coin_flip(0.0005f)) 
+    log_ray(out, 10.0f);
     return trace_ray(out);
 }
 

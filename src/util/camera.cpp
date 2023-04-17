@@ -117,6 +117,14 @@ void Camera::set_ar(Vec2 dim) {
 
 void Camera::set_ap(float ap) {
     aperture = ap;
+    if (lens_elements.empty())
+        return;
+    for (size_t i = 0; i < lens_elements.size(); i++) {
+        if (lens_elements.at(i).curvature == 0.0f) {
+            lens_elements.at(i).aperture = ap * 0.001;
+            break;
+        }
+    }
 }
 
 float Camera::get_ap() const {

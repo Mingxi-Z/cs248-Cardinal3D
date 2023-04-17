@@ -28,37 +28,15 @@ Vec3 refract(Vec3 out_dir, float index_of_refraction, bool& was_internal) {
     // you want to compute the 'input' direction that would cause this output,
     // and to do so you can simply find the direction that out_dir would refract
     // _to_, as refraction is symmetric.
-    // Vec3 in_dir;
-    // Vec3 normal(0, 1, 0);
-    // bool entering = out_dir.y > 0.0f;
+    Vec3 normal(0.0f, 1.0f, 0.0f);
+    float cos_theta_i = dot(out_dir, normal);
+    if (cos_theta_i < 0.0f)
+        normal = -normal;
 
-    // normal = (!entering) ? -normal : normal;
-
-    // float cos_theta_out = dot(normal, out_dir);
-
-    // float eta = index_of_refraction;
-
-    // float sin2_theta_out = std::max(0.f, 1.f - cos_theta_out * cos_theta_out);
-    // float sin2_theta_in = eta * eta * sin2_theta_out;
-
-    // if (sin2_theta_in >= 1) {
-    //     was_internal = true;
-    //     return in_dir;
-    // }
-
-    // float cos_theta_in = std::sqrt(1 - sin2_theta_in);
-
-    // in_dir = eta * -out_dir + (eta * cos_theta_out - cos_theta_in) * normal;
-    // //was_internal = false;
-
-    // return in_dir;
-
-    float cos_theta_i = dot(out_dir, Vec3(0, 1, 0));
     float eta_i = cos_theta_i > 0 ? index_of_refraction : 1.0f;
     float eta_t = cos_theta_i > 0 ? 1.0f : index_of_refraction;
     float eta = eta_i / eta_t;
 
-    Vec3 normal = cos_theta_i > 0 ? Vec3(0, 1, 0) : Vec3(0, -1, 0);
     cos_theta_i = abs(cos_theta_i);
 
     float sin_theta_t2 = eta * eta * (1 - cos_theta_i * cos_theta_i);
